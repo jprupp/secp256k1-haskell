@@ -2,6 +2,7 @@ resolver: lts-23.0
 
 packages:
 - secp256k1-haskell
+- secp256k1-haskell-recovery
 
 nix:
   packages:

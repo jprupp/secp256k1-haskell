@@ -4,3 +4,5 @@ REPO_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )
 
 find $REPO_DIR/secp256k1-haskell/src -type f -name "*.hs" | xargs ormolu -i
 find $REPO_DIR/secp256k1-haskell/test -type f -name "*.hs" | xargs ormolu -i
+find $REPO_DIR/secp256k1-haskell-recovery/src -type f -name "*.hs" | xargs ormolu -i
+find $REPO_DIR/secp256k1-haskell-recovery/test -type f -name "*.hs" | xargs ormolu -i

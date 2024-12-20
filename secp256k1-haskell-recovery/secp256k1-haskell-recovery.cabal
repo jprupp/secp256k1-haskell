@@ -1,0 +1,75 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.36.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           secp256k1-haskell-recovery
+version:        0.1.0
+synopsis:       Bindings for recoverable signatures feature of secp256k1
+description:    Sign and verify recoverable signatures using the secp256k1 library.
+category:       Crypto
+homepage:       http://github.com/haskoin/secp256k1-haskell#readme
+bug-reports:    https://github.com/haskoin/secp256k1-haskell/issues
+author:         Evgeny Osipenko
+maintainer:     jprupp@protonmail.ch
+copyright:      (c) 2023 Evgeny Osipenko
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/haskoin/secp256k1-haskell
+
+library
+  exposed-modules:
+      Crypto.Secp256k1.Internal.Recovery
+      Crypto.Secp256k1.Internal.RecoveryOps
+      Crypto.Secp256k1.Recovery
+  other-modules:
+      Paths_secp256k1_haskell_recovery
+  hs-source-dirs:
+      src
+  build-depends:
+      QuickCheck >=2.9.2 && <2.15
+    , base >=4.9 && <5
+    , base16 >=1.0
+    , bytestring >=0.10.8 && <0.12
+    , deepseq >=1.4.2 && <1.5
+    , entropy >=0.3.8 && <0.5
+    , hashable >=1.2.6 && <1.5
+    , secp256k1-haskell
+    , string-conversions ==0.4.*
+    , unliftio-core >=0.1.0 && <0.3
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Crypto.Secp256k1.RecoverySpec
+      Paths_secp256k1_haskell_recovery
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , QuickCheck >=2.9.2 && <2.15
+    , base >=4.9 && <5
+    , base16 >=1.0
+    , bytestring >=0.10.8 && <0.12
+    , deepseq >=1.4.2 && <1.5
+    , entropy >=0.3.8 && <0.5
+    , hashable >=1.2.6 && <1.5
+    , hspec
+    , monad-par
+    , mtl
+    , secp256k1-haskell
+    , secp256k1-haskell-recovery
+    , string-conversions ==0.4.*
+    , unliftio-core >=0.1.0 && <0.3
+  default-language: Haskell2010
+  build-tool-depends: hspec-discover:hspec-discover
