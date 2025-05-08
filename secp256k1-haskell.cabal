@@ -1,19 +1,19 @@
 cabal-version: 2.0
 
--- This file has been generated from package.yaml by hpack version 0.37.0.
+-- This file has been generated from package.yaml by hpack version 0.38.0.
 --
 -- see: https://github.com/sol/hpack
 
 name:           secp256k1-haskell
-version:        1.4.3
+version:        1.4.4
 synopsis:       Bindings for secp256k1
 description:    Sign and verify signatures using the secp256k1 library.
 category:       Crypto
 homepage:       http://github.com/jprupp/secp256k1-haskell#readme
 bug-reports:    https://github.com/jprupp/secp256k1-haskell/issues
-author:         Jean-Pierre Rupp
+author:         JP Rupp
 maintainer:     jprupp@protonmail.ch
-copyright:      (c) 2017 Jean-Pierre Rupp
+copyright:      (c) 2017 JP Rupp
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple

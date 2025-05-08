@@ -1,11 +1,11 @@
 name: secp256k1-haskell
-version: 1.4.3
+version: 1.4.4
 synopsis: Bindings for secp256k1
 description: Sign and verify signatures using the secp256k1 library.
 category: Crypto
-author: Jean-Pierre Rupp
+author: JP Rupp
 maintainer: jprupp@protonmail.ch
-copyright: (c) 2017 Jean-Pierre Rupp
+copyright: (c) 2017 JP Rupp
 license: MIT
 license-file: LICENSE
 github: jprupp/secp256k1-haskell
