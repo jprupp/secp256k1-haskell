@@ -1,12 +1,3 @@
--- |
--- Module      : Crypto.Secp256k1.Internal.BaseOps
--- License     : UNLICENSE
--- Maintainer  : Jean-Pierre Rupp <jprupp@protonmail.ch>
--- Stability   : experimental
--- Portability : POSIX
---
--- The API for this module may change at any time. This is an internal module only
--- exposed for hacking and experimentation.
 module Crypto.Secp256k1.Internal.BaseOps where
 
 import Crypto.Secp256k1.Internal.ForeignTypes

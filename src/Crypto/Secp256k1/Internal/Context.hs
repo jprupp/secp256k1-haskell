@@ -1,14 +1,4 @@
 {-# LANGUAGE NoFieldSelectors #-}
-
--- |
--- Module      : Crypto.Secp256k1.Internal.Context
--- License     : UNLICENSE
--- Maintainer  : Jean-Pierre Rupp <jprupp@protonmail.ch>
--- Stability   : experimental
--- Portability : POSIX
---
--- The API for this module may change at any time. This is an internal module only
--- exposed for hacking and experimentation.
 module Crypto.Secp256k1.Internal.Context where
 
 import Control.Exception (bracket, mask_)
