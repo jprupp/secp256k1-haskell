@@ -5,7 +5,6 @@ description: Sign and verify signatures using the secp256k1 library.
 category: Crypto
 author: JP Rupp
 maintainer: jprupp@protonmail.ch
-copyright: (c) 2017 JP Rupp
 license: MIT
 license-file: LICENSE
 github: jprupp/secp256k1-haskell

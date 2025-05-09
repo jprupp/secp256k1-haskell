@@ -13,7 +13,6 @@ homepage:       http://github.com/jprupp/secp256k1-haskell#readme
 bug-reports:    https://github.com/jprupp/secp256k1-haskell/issues
 author:         JP Rupp
 maintainer:     jprupp@protonmail.ch
-copyright:      (c) 2017 JP Rupp
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple
