@@ -1,5 +1,6 @@
-resolver: nightly-2026-08-11
-
+resolver: nightly-2026-10-28
+extra-deps:
+  - base16-2.0
 nix:
   packages:
     - secp256k1

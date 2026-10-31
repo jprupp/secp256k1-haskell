@@ -1,5 +1,5 @@
 name: secp256k1-haskell
-version: 1.5.0
+version: 1.5.1
 synopsis: Bindings for secp256k1
 description: Sign and verify signatures using the secp256k1 library.
 category: Crypto
@@ -13,7 +13,7 @@ extra-source-files:
   - CHANGELOG.md
 dependencies:
   - base >=4.9 && <5
-  - base16 >=1.0
+  - base16 >=2.0
   - bytestring >=0.10.8
   - entropy >=0.3.8
   - deepseq >=1.4.2
