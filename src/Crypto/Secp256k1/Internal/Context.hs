@@ -23,7 +23,7 @@ import Foreign.ForeignPtr
 import GHC.Conc (writeTVar)
 import System.IO.Unsafe (unsafePerformIO)
 
-newtype Ctx = Ctx {get :: ForeignPtr LCtx}
+data Ctx = Ctx (ForeignPtr LCtx)
 
 randomizeContext :: Ctx -> IO ()
 randomizeContext (Ctx fctx) = withForeignPtr fctx $ \ctx -> do
@@ -43,9 +43,6 @@ cloneContext (Ctx fctx) =
   withForeignPtr fctx $ \ctx -> mask_ $ do
     ctx' <- contextClone ctx
     Ctx <$> newForeignPtr contextDestroyFunPtr ctx'
-
-destroyContext :: Ctx -> IO ()
-destroyContext (Ctx fctx)= finalizeForeignPtr fctx
 
 withContext :: (Ctx -> IO a) -> IO a
 withContext = (createContext >>=)
