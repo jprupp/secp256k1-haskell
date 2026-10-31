@@ -3,6 +3,9 @@ module Crypto.Secp256k1
   ( -- * Context
     Ctx (..),
     withContext,
+    createContext,
+    randomizeContext,
+    cloneContext,
 
     -- * Messages
     Msg (..),
