@@ -69,6 +69,12 @@
 --
 -- Bitcoin Core's Schnorr signing applies the Taproot tweak itself when it is
 -- given a Merkle root. Here 'tweakAddXOnlySecKey' does that step separately.
+--
+-- == Public key recovery
+--
+-- ECDSA public key recovery, which Bitcoin signed messages use, is in the
+-- module @Crypto.Secp256k1.Recovery@. It is built when the @recovery@ flag of
+-- the package is on, which is the default.
 module Crypto.Secp256k1
   ( -- * Context
     Ctx,
