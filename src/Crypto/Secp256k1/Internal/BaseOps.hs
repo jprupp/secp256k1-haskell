@@ -159,5 +159,5 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_combine"
     -- | pointer to array of public keys
     Ptr (Ptr PubKey64) ->
     -- | number of public keys
-    CInt ->
+    CSize ->
     IO Ret

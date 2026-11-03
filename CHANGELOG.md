@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-11-03
+
+### Fixed
+
+- `secKey` rejects zero and numbers not lower than the curve order, as
+  `secp256k1_ec_seckey_verify` does. `Read` and `IsString` for `SecKey` follow.
+- `pubKey` and `sig` reject bytes that are not a canonical internal
+  representation of a point on the curve or of a signature with both
+  components below the order. `Read` and `IsString` follow.
+- An illegal argument no longer aborts the program. Contexts get a callback
+  that makes libsecp256k1 return failure, so a zero `PubKey` built with the
+  raw constructor gives `False`, `Nothing` or an exception.
+- Functions raise an error for a `SecKey`, `PubKey`, `Sig`, `CompactSig`,
+  `Msg` or `Tweak` of the wrong length built with the raw constructor, instead
+  of letting libsecp256k1 read past the end of the buffer.
+- `combinePubKeys` passes the key count as `size_t`, as the C function expects,
+  and returns `Nothing` when a key is not a valid point, since
+  `secp256k1_ec_pubkey_combine` does not check.
+- Tweak functions write to a fresh buffer instead of mutating a `ByteString`
+  in place.
+
 ## [1.7.0] - 2026-10-31
 
 ### Added
