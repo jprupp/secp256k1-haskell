@@ -21,6 +21,14 @@ data Tweak32
 
 data RecSig65
 
+data XOnlyPubKey64
+
+data KeyPair96
+
+data SchnorrSig64
+
+data AuxRand32
+
 type CtxFlags = CUInt
 
 type SerFlags = CUInt

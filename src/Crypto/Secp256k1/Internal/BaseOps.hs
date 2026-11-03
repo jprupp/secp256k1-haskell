@@ -1,17 +1,21 @@
 module Crypto.Secp256k1.Internal.BaseOps where
 
 import Crypto.Secp256k1.Internal.ForeignTypes
-  ( Compact64,
+  ( AuxRand32,
+    Compact64,
+    KeyPair96,
     LCtx,
     Msg32,
     NonceFun,
     PubKey64,
     Ret,
+    SchnorrSig64,
     SecKey32,
     Seed32,
     SerFlags,
     Sig64,
     Tweak32,
+    XOnlyPubKey64,
   )
 import Foreign (FunPtr, Ptr)
 import Foreign.C
@@ -160,4 +164,75 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_combine"
     Ptr (Ptr PubKey64) ->
     -- | number of public keys
     CSize ->
+    IO Ret
+
+-- The following functions belong to the @extrakeys@ and @schnorrsig@ modules
+-- of libsecp256k1, enabled by default since version 0.2.0.
+
+foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_from_pubkey"
+  xOnlyPubKeyFromPubKey ::
+    Ptr LCtx ->
+    Ptr XOnlyPubKey64 ->
+    -- | parity of the public key, 1 if odd; may be NULL
+    Ptr CInt ->
+    Ptr PubKey64 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_serialize"
+  xOnlyPubKeySerialize ::
+    Ptr LCtx ->
+    -- | 32-byte output
+    Ptr CUChar ->
+    Ptr XOnlyPubKey64 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_tweak_add"
+  xOnlyPubKeyTweakAdd ::
+    Ptr LCtx ->
+    -- | tweaked public key
+    Ptr PubKey64 ->
+    Ptr XOnlyPubKey64 ->
+    Ptr Tweak32 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_create"
+  keyPairCreate ::
+    Ptr LCtx ->
+    Ptr KeyPair96 ->
+    Ptr SecKey32 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_sec"
+  keyPairSec ::
+    Ptr LCtx ->
+    Ptr SecKey32 ->
+    Ptr KeyPair96 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_xonly_tweak_add"
+  keyPairXOnlyTweakAdd ::
+    Ptr LCtx ->
+    Ptr KeyPair96 ->
+    Ptr Tweak32 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_schnorrsig.h secp256k1_schnorrsig_sign32"
+  schnorrSigSign32 ::
+    Ptr LCtx ->
+    Ptr SchnorrSig64 ->
+    Ptr Msg32 ->
+    Ptr KeyPair96 ->
+    -- | auxiliary randomness; may be NULL
+    Ptr AuxRand32 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_schnorrsig.h secp256k1_schnorrsig_verify"
+  schnorrSigVerify ::
+    Ptr LCtx ->
+    Ptr SchnorrSig64 ->
+    -- | message
+    Ptr CUChar ->
+    -- | message length
+    CSize ->
+    Ptr XOnlyPubKey64 ->
     IO Ret
