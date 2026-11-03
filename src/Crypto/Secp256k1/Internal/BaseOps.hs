@@ -11,7 +11,6 @@ import Crypto.Secp256k1.Internal.ForeignTypes
     Ret,
     SchnorrSig64,
     SecKey32,
-    Seed32,
     SerFlags,
     Sig64,
     Tweak32,
@@ -134,7 +133,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_seckey_negate"
     Ptr Tweak32 ->
     IO Ret
 
-foreign import ccall unsafe "secp256k1.h secp256k1_ec_pubkey_tweak_add"
+foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_tweak_add"
   ecPubKeyTweakAdd ::
     Ptr LCtx ->
     Ptr PubKey64 ->
@@ -206,6 +205,15 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_sec"
   keyPairSec ::
     Ptr LCtx ->
     Ptr SecKey32 ->
+    Ptr KeyPair96 ->
+    IO Ret
+
+foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_xonly_pub"
+  keyPairXOnlyPub ::
+    Ptr LCtx ->
+    Ptr XOnlyPubKey64 ->
+    -- | parity of the public key, 1 if odd; may be NULL
+    Ptr CInt ->
     Ptr KeyPair96 ->
     IO Ret
 

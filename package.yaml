@@ -1,5 +1,5 @@
 name: secp256k1-haskell
-version: 1.8.0
+version: 2.0.0
 synopsis: Bindings for secp256k1
 description: Sign and verify signatures using the secp256k1 library.
 category: Crypto
@@ -20,20 +20,22 @@ dependencies:
   - hashable >=1.2.6
   - QuickCheck >=2.9.2
   - string-conversions >=0.4
-  - unliftio-core >=0.1.0
 library:
   source-dirs: src
+  c-sources:
+    - cbits/illegal_callback.c
+  ghc-options:
+    - -Wall
   generated-exposed-modules:
     - Paths_secp256k1_haskell
   pkg-config-dependencies:
-    - libsecp256k1
-  c-sources:
-    - cbits/illegal_callback.c
+    - libsecp256k1 >= 0.2.0
 tests:
   spec:
     main: Spec.hs
     source-dirs: test
     ghc-options:
+      - -Wall
       - -threaded
       - -rtsopts
       - -with-rtsopts=-N
