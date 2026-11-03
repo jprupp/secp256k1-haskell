@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [1.9.0] - 2026-11-03
+## [1.8.0] - 2026-11-03
 
 ### Added
 
@@ -16,8 +16,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   32-byte BIP-340 x-only public keys.
 - `tweakAddXOnlyPubKey` and `tweakAddXOnlySecKey` add a BIP-341 Taproot tweak
   to a public key and to its secret key.
-
-## [1.8.0] - 2026-11-03
 
 ### Fixed
 
