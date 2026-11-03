@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-11-03
+
+This release follows a review of the bindings, including the changes of
+1.8.0. The raw constructors are hidden, the text instances use standard
+encodings, and more values are validated when they are built. Several
+changes are breaking; see Changed.
+
+### Changed
+
+- The raw constructors of `SecKey`, `PubKey`, `Sig`, `CompactSig`,
+  `SchnorrSig`, `Msg` and `Tweak`, and the `Ctx` constructor, are no longer
+  exported from `Crypto.Secp256k1`. Build values with `secKey`, `pubKey`,
+  `sig`, `compactSig`, `schnorrSig`, `msg`, `tweak` or the import functions.
+  The `get` field is still exported. The constructors remain available from
+  `Crypto.Secp256k1.Internal.Base`, without validation.
+- `tweak` rejects numbers not below the curve order. `sig` rejects a zero
+  component. `Read` and `IsString` follow.
+- `Show`, `Read` and `IsString` for `PubKey` use the compressed SEC1 encoding
+  in hex; `Read` and `IsString` also accept the uncompressed and hybrid
+  encodings. The same instances for `Sig` use the compact encoding in hex.
+  Before, they used the internal representation of libsecp256k1, which is not
+  portable between platforms or library versions.
+- `normalizeSig` is total: `Ctx -> Sig -> Sig`. It returns the lower-S form of
+  any signature. Before, it returned `Nothing` for a signature that was
+  already in that form.
+- `importSig` and `importCompactSig` return `Nothing` for a signature with a
+  zero component. libsecp256k1 parses a DER component that is not below the
+  curve order as zero while reporting success, and such a signature can never
+  verify.
+- `tweakNegate` returns `Just` zero for a zero tweak.
+- `combinePubKeys` raises an error for a raw key of the wrong length, as every
+  other function does, instead of returning `Nothing`.
+- `signSchnorr`, `signSchnorrWithAux` and `signSchnorrIO` verify the signature
+  before returning it, as BIP-340 requires, and raise an error if that fails.
+- The package requires libsecp256k1 0.2.0 or later through `pkg-config`. The
+  Schnorr bindings of 1.8.0 already needed that version to link.
+
+### Added
+
+- `signMsgLowR` grinds the nonce until r is below 2^255, with the same extra
+  nonce data as Bitcoin Core, so DER signatures are at most 70 bytes and are
+  byte-for-byte the same as Bitcoin Core's.
+- `isLowS` and `isLowR`.
+- `Show`, `Read` and `IsString` instances for `CompactSig`.
+- `Arbitrary` instance for `Tweak`.
+- Documentation of the thread-safety rule of `randomizeContext`, of what
+  `Show` prints for a `SecKey`, of the memory handling of secret keys, of the
+  lower-S requirement of `verifySig`, of the x-only representation of BIP-340
+  keys, and of the differences from Bitcoin Core.
+
+### Fixed
+
+- `importPubKey` and `exportPubKey` were documented as DER. The format is
+  SEC1.
+- `tweakMulPubKey` was documented as adding a multiple of the generator.
+- Removed the unused `unliftio-core` dependency and unused imports. The
+  library and the tests build with `-Wall` without warnings.
+
 ## [1.8.0] - 2026-11-03
 
 ### Added

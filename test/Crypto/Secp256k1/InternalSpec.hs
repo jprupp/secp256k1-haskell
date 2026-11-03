@@ -19,7 +19,7 @@ import Data.ByteString
 import Data.ByteString.Base16 (decodeBase16)
 import Foreign
 import System.Entropy
-import Test.HUnit (Assertion, assertBool, assertEqual, assertFailure)
+import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Hspec
 
 spec :: Spec
@@ -348,7 +348,7 @@ ecPubKeyTweakAddTest = do
         ret <- ecPubKeyTweakAdd x p w
         tweaked <- serializeKey x p
         return (ret, tweaked)
-  assertBool "successful secret key tweak" $ isSuccess ret
+  assertBool "successful public key tweak" $ isSuccess ret
   assertEqual "tweaked keys match" expected tweaked
   where
     pub =
@@ -376,7 +376,7 @@ ecPubKeyTweakMulTest = do
         ret <- ecPubKeyTweakMul x p w
         tweaked <- serializeKey x p
         return (ret, tweaked)
-  assertBool "successful secret key tweak" $ isSuccess ret
+  assertBool "successful public key tweak" $ isSuccess ret
   assertEqual "tweaked keys match" expected tweaked
   where
     pub =

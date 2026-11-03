@@ -2,6 +2,7 @@
 
 module Crypto.Secp256k1.Internal.Util where
 
+import Control.Exception (onException)
 import Crypto.Secp256k1.Internal.ForeignTypes (Seed32)
 import Data.Base16.Types (extractBase16)
 import Data.ByteString (ByteString)
@@ -9,7 +10,6 @@ import qualified Data.ByteString as BS
 import Data.ByteString.Base16 (decodeBase16, encodeBase16, parseBase16)
 import qualified Data.ByteString.Unsafe as BU
 import Data.String.Conversions (ConvertibleStrings, cs)
-import Control.Exception (onException)
 import Foreign (Ptr, castPtr, copyBytes, free, mallocBytes)
 import Foreign.C (CSize (..))
 import System.Entropy (getEntropy)
@@ -34,22 +34,29 @@ useByteString bs f =
     f (castPtr b, fromIntegral l)
 
 -- | Like 'unsafeUseByteString', for an argument that the C library reads as a
--- fixed number of bytes. A 'ByteString' of any other length would make it
--- read outside the buffer, so it raises an error instead.
+-- fixed number of bytes. A 'ByteString' of any other length would make the
+-- library read outside the buffer, so this raises an error instead. The name
+-- is the Haskell type, for the error message.
 useFixedByteString ::
   String -> Int -> ByteString -> ((Ptr a, CSize) -> IO b) -> IO b
 useFixedByteString name len bs f
   | BS.length bs == len = unsafeUseByteString bs f
-  | otherwise =
-      error $
-        name
-          ++ " must be "
-          ++ show len
-          ++ " bytes long, got "
-          ++ show (BS.length bs)
+  | otherwise = wrongLength name len bs
+
+-- | Raise the error for a value of the wrong length. The name is the Haskell
+-- type, for the error message.
+wrongLength :: String -> Int -> ByteString -> a
+wrongLength name len bs =
+  error $
+    name
+      ++ " must be "
+      ++ show len
+      ++ " bytes long, got "
+      ++ show (BS.length bs)
 
 -- | Allocate a buffer of the given size for the C library to fill. The buffer
--- becomes the result when the action reports success and is freed otherwise.
+-- becomes the result when the action reports success. It is freed when the
+-- action reports failure or throws.
 withOutput :: Int -> (Ptr a -> IO Bool) -> IO (Maybe ByteString)
 withOutput len f = do
   ptr <- mallocBytes len
@@ -58,8 +65,15 @@ withOutput len f = do
     then Just <$> unsafePackByteString (ptr, fromIntegral len)
     else free ptr >> return Nothing
 
--- | Like 'withOutput', with the buffer holding a copy of a fixed-size input
--- that the C library modifies in place. The input is not modified.
+-- | Like 'withOutput', for a C function that always fills the buffer.
+fillOutput :: Int -> (Ptr a -> IO ()) -> IO ByteString
+fillOutput len f = do
+  ptr <- mallocBytes len
+  f ptr `onException` free ptr
+  unsafePackByteString (ptr, fromIntegral len)
+
+-- | Like 'withOutput', with the buffer starting as a copy of a fixed-size
+-- input that the C library modifies in place. The input is left untouched.
 withCopy ::
   String -> Int -> ByteString -> (Ptr a -> IO Bool) -> IO (Maybe ByteString)
 withCopy name len bs f =

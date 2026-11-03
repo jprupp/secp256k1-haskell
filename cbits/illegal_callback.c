@@ -1,10 +1,15 @@
 /*
- * Callback for illegal arguments passed to libsecp256k1.
+ * Illegal-argument callback installed on every context this package creates.
  *
- * The default callback of libsecp256k1 prints a message and calls abort(),
- * which terminates the Haskell program. With this callback installed, the
- * library function that received the illegal argument returns 0 instead, and
- * the Haskell binding reports the failure as Nothing or as an exception.
+ * The default callback of libsecp256k1 prints the message to stderr and calls
+ * abort(). That kills the whole Haskell process and cannot be caught. With
+ * this callback installed, the C function that received the illegal argument
+ * returns 0 instead, and the Haskell side turns that into Nothing, False or
+ * an ErrorCall exception.
+ *
+ * The error callback, which reports internal consistency failures of the
+ * library itself, keeps its default. Those indicate a broken build and
+ * should still abort.
  */
 void secp256k1_haskell_illegal_callback(const char *message, void *data) {
   (void)message;
