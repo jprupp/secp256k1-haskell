@@ -9,7 +9,9 @@
 module Crypto.Secp256k1.Internal.Base where
 
 import Control.DeepSeq (NFData)
-import Control.Monad (replicateM, unless, (<=<))
+import Control.Exception (evaluate, finally)
+import Control.Monad (join, replicateM, unless, (<=<))
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Crypto.Secp256k1.Internal.BaseOps
   ( ecPubKeyCombine,
     ecPubKeyCreate,
@@ -27,10 +29,21 @@ import Crypto.Secp256k1.Internal.BaseOps
     ecdsaSignatureSerializeCompact,
     ecdsaSignatureSerializeDer,
     ecdsaVerify,
+    keyPairCreate,
+    keyPairSec,
+    keyPairXOnlyTweakAdd,
+    schnorrSigSign32,
+    schnorrSigVerify,
+    xOnlyPubKeyFromPubKey,
+    xOnlyPubKeySerialize,
+    xOnlyPubKeyTweakAdd,
   )
 import Crypto.Secp256k1.Internal.Context (Ctx (..), validationContext)
 import Crypto.Secp256k1.Internal.ForeignTypes
-  ( compressed,
+  ( KeyPair96,
+    LCtx,
+    XOnlyPubKey64,
+    compressed,
     isSuccess,
     uncompressed,
   )
@@ -49,9 +62,11 @@ import Data.Hashable (Hashable (..))
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.String (IsString (..))
 import Foreign
-  ( alloca,
+  ( Ptr,
+    alloca,
     allocaArray,
     allocaBytes,
+    fillBytes,
     nullFunPtr,
     nullPtr,
     peek,
@@ -60,6 +75,7 @@ import Foreign
     withForeignPtr,
   )
 import GHC.Generics (Generic)
+import System.Entropy (getEntropy)
 import System.IO.Unsafe (unsafePerformIO)
 import Test.QuickCheck
   ( Arbitrary (..),
@@ -90,6 +106,11 @@ newtype Tweak = Tweak {get :: ByteString}
   deriving (Eq, Generic, Hashable, NFData)
 
 newtype CompactSig = CompactSig {get :: ByteString}
+  deriving (Eq, Generic, Hashable, NFData)
+
+-- | BIP-340 Schnorr signature. Unlike 'Sig', the 64 bytes are the serialized
+-- form defined by BIP-340, which is the same on every platform.
+newtype SchnorrSig = SchnorrSig {get :: ByteString}
   deriving (Eq, Generic, Hashable, NFData)
 
 instance Read PubKey where
@@ -155,6 +176,19 @@ instance IsString Tweak where
       e = error "Could not decode tweak from hex string"
 
 instance Show Tweak where
+  showsPrec _ = showsHex . (.get)
+
+instance Read SchnorrSig where
+  readPrec = parens $ do
+    String str <- lexP
+    maybe pfail return $ schnorrSig =<< decodeHex str
+
+instance IsString SchnorrSig where
+  fromString = fromMaybe e . (schnorrSig <=< decodeHex)
+    where
+      e = error "Could not decode Schnorr signature from hex string"
+
+instance Show SchnorrSig where
   showsPrec _ = showsHex . (.get)
 
 -- | Import a signature in its internal 64-byte representation, as found in
@@ -409,6 +443,135 @@ tweakNegate (Ctx fctx) (Tweak t) =
   unsafePerformIO $ withForeignPtr fctx $ \ctx ->
     (fmap . fmap) Tweak . withCopy "Tweak" 32 t $ \out ->
       isSuccess <$> ecTweakNegate ctx out
+
+-- | Import a 64-byte BIP-340 Schnorr signature. Only the length is checked
+-- here; 'verifySchnorr' rejects signatures whose components are out of range.
+schnorrSig :: ByteString -> Maybe SchnorrSig
+schnorrSig bs
+  | BS.length bs == 64 = Just (SchnorrSig bs)
+  | otherwise = Nothing
+
+-- | Run an action with the x-only form of a public key, which drops the
+-- parity of its Y coordinate. 'Nothing' if the key is not a valid point.
+withXOnlyPubKey ::
+  Ptr LCtx -> ByteString -> (Ptr XOnlyPubKey64 -> IO a) -> IO (Maybe a)
+withXOnlyPubKey ctx pub_key f =
+  useFixedByteString "PubKey" 64 pub_key $ \(pub_key_ptr, _) ->
+    allocaBytes 64 $ \xonly_ptr -> do
+      ret <- xOnlyPubKeyFromPubKey ctx xonly_ptr nullPtr pub_key_ptr
+      if isSuccess ret then Just <$> f xonly_ptr else return Nothing
+
+-- | Run an action with the key pair of a secret key. 'Nothing' if the secret
+-- key is not valid. The key pair holds the secret key, so its memory is
+-- cleared afterwards.
+withKeyPair ::
+  Ptr LCtx -> ByteString -> (Ptr KeyPair96 -> IO a) -> IO (Maybe a)
+withKeyPair ctx sec_key f =
+  useFixedByteString "SecKey" 32 sec_key $ \(sec_key_ptr, _) ->
+    allocaBytes 96 $ \key_pair -> do
+      let go = do
+            ret <- keyPairCreate ctx key_pair sec_key_ptr
+            if isSuccess ret then Just <$> f key_pair else return Nothing
+      go `finally` fillBytes key_pair 0 96
+
+-- | Import a 32-byte BIP-340 x-only public key. The result is the point with
+-- that X coordinate and an even Y coordinate. 'Nothing' if the bytes are not
+-- the X coordinate of a point on the curve.
+importXOnlyPubKey :: Ctx -> ByteString -> Maybe PubKey
+importXOnlyPubKey ctx bs
+  | BS.length bs == 32 = importPubKey ctx (BS.cons 0x02 bs)
+  | otherwise = Nothing
+
+-- | Encode a public key as a 32-byte BIP-340 x-only public key: its X
+-- coordinate. A key and its negation have the same encoding.
+exportXOnlyPubKey :: Ctx -> PubKey -> ByteString
+exportXOnlyPubKey (Ctx fctx) (PubKey pub_key) =
+  unsafePerformIO $ withForeignPtr fctx $ \ctx -> do
+    out <- withXOnlyPubKey ctx pub_key $ \xonly_ptr ->
+      allocaBytes 32 $ \out_ptr -> do
+        ret <- xOnlyPubKeySerialize ctx out_ptr xonly_ptr
+        unless (isSuccess ret) $ error "could not serialize x-only public key"
+        packByteString (out_ptr, 32)
+    maybe (error "could not serialize x-only public key") return out
+
+-- | Sign a 32-byte message with BIP-340, without auxiliary randomness. The
+-- signature is deterministic, and the same as with 32 zero bytes of auxiliary
+-- randomness. BIP-340 recommends fresh randomness to protect against side
+-- channel attacks: see 'signSchnorrIO' and 'signSchnorrWithAux'.
+signSchnorr :: Ctx -> SecKey -> Msg -> SchnorrSig
+signSchnorr ctx sec_key m = signSchnorrInternal ctx sec_key m Nothing
+
+-- | Sign a 32-byte message with BIP-340, using the 32 bytes of auxiliary
+-- randomness given as the last argument. 'Nothing' if that argument is not 32
+-- bytes long.
+signSchnorrWithAux :: Ctx -> SecKey -> Msg -> ByteString -> Maybe SchnorrSig
+signSchnorrWithAux ctx sec_key m aux
+  | BS.length aux == 32 = Just $ signSchnorrInternal ctx sec_key m (Just aux)
+  | otherwise = Nothing
+
+-- | Sign a 32-byte message with BIP-340, using fresh auxiliary randomness from
+-- the system, as BIP-340 recommends.
+signSchnorrIO :: (MonadIO m) => Ctx -> SecKey -> Msg -> m SchnorrSig
+signSchnorrIO ctx sec_key m = liftIO $ do
+  aux <- getEntropy 32
+  evaluate $ signSchnorrInternal ctx sec_key m (Just aux)
+
+signSchnorrInternal :: Ctx -> SecKey -> Msg -> Maybe ByteString -> SchnorrSig
+signSchnorrInternal (Ctx fctx) (SecKey sec_key) (Msg m) aux =
+  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+    useFixedByteString "Msg" 32 m $ \(msg_ptr, _) ->
+      withAux $ \aux_ptr -> do
+        out <- withKeyPair ctx sec_key $ \key_pair ->
+          withOutput 64 $ \sig_ptr ->
+            isSuccess <$> schnorrSigSign32 ctx sig_ptr msg_ptr key_pair aux_ptr
+        maybe (error "could not sign message") (return . SchnorrSig) (join out)
+  where
+    withAux f = case aux of
+      Nothing -> f nullPtr
+      Just bs -> useFixedByteString "aux" 32 bs (f . fst)
+
+-- | Verify a BIP-340 signature of a 32-byte message. Only the X coordinate of
+-- the public key is used, as BIP-340 public keys are x-only: a key and its
+-- negation verify the same signatures. 'True' means that the signature is
+-- correct.
+verifySchnorr :: Ctx -> PubKey -> SchnorrSig -> Msg -> Bool
+verifySchnorr (Ctx fctx) (PubKey pub_key) (SchnorrSig sig_bs) (Msg m) =
+  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+    useFixedByteString "SchnorrSig" 64 sig_bs $ \(sig_ptr, _) ->
+      useFixedByteString "Msg" 32 m $ \(msg_ptr, msg_len) ->
+        fmap (fromMaybe False) . withXOnlyPubKey ctx pub_key $ \xonly_ptr ->
+          isSuccess <$> schnorrSigVerify ctx sig_ptr msg_ptr msg_len xonly_ptr
+
+-- | Add a tweak to the x-only form of a public key: the result is @P + t G@,
+-- where @P@ is the point with the same X coordinate and an even Y coordinate.
+-- This is how BIP-341 derives a Taproot output key from its internal key.
+-- The result is a full public key; its X coordinate is the tweaked x-only
+-- key, and the parity of its Y coordinate goes in a BIP-341 control block.
+-- 'Nothing' if the tweak is not lower than the curve order or the result is
+-- the point at infinity.
+tweakAddXOnlyPubKey :: Ctx -> PubKey -> Tweak -> Maybe PubKey
+tweakAddXOnlyPubKey (Ctx fctx) (PubKey pub_key) (Tweak t) =
+  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+    useFixedByteString "Tweak" 32 t $ \(tweak_ptr, _) ->
+      fmap join . withXOnlyPubKey ctx pub_key $ \xonly_ptr ->
+        (fmap . fmap) PubKey . withOutput 64 $ \out ->
+          isSuccess <$> xOnlyPubKeyTweakAdd ctx out xonly_ptr tweak_ptr
+
+-- | Add a tweak to a secret key the way 'tweakAddXOnlyPubKey' does to its
+-- public key: the secret key is negated first if its public key has an odd Y
+-- coordinate. This gives the key that signs for a BIP-341 Taproot output in
+-- the key path. 'Nothing' if the tweak is not lower than the curve order or
+-- the result is zero.
+tweakAddXOnlySecKey :: Ctx -> SecKey -> Tweak -> Maybe SecKey
+tweakAddXOnlySecKey (Ctx fctx) (SecKey sec_key) (Tweak t) =
+  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+    useFixedByteString "Tweak" 32 t $ \(tweak_ptr, _) ->
+      fmap join . withKeyPair ctx sec_key $ \key_pair -> do
+        ret <- keyPairXOnlyTweakAdd ctx key_pair tweak_ptr
+        if not (isSuccess ret)
+          then return Nothing
+          else (fmap . fmap) SecKey . withOutput 32 $ \out ->
+            isSuccess <$> keyPairSec ctx out key_pair
 
 instance Arbitrary Msg where
   arbitrary = gen_msg

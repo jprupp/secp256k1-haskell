@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [1.8.0] - 2026-11-03
 
+### Added
+
+- BIP-340 Schnorr signatures, built on the `schnorrsig` and `extrakeys`
+  modules of libsecp256k1, which it enables by default since version 0.2.0:
+  `SchnorrSig`, `schnorrSig`, `signSchnorr`, `signSchnorrWithAux`,
+  `signSchnorrIO` and `verifySchnorr`. No build flag is needed.
+- `importXOnlyPubKey` and `exportXOnlyPubKey` convert between `PubKey` and
+  32-byte BIP-340 x-only public keys.
+- `tweakAddXOnlyPubKey` and `tweakAddXOnlySecKey` add a BIP-341 Taproot tweak
+  to a public key and to its secret key.
+
 ### Fixed
 
 - `secKey` rejects zero and numbers not lower than the curve order, as

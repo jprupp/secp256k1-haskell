@@ -48,6 +48,22 @@ module Crypto.Secp256k1
     tweakMulPubKey,
     combinePubKeys,
     tweakNegate,
+
+    -- * Schnorr Signatures (BIP-340)
+    SchnorrSig (..),
+    schnorrSig,
+    signSchnorr,
+    signSchnorrWithAux,
+    signSchnorrIO,
+    verifySchnorr,
+
+    -- ** X-Only Public Keys
+    importXOnlyPubKey,
+    exportXOnlyPubKey,
+
+    -- ** Taproot Tweaks (BIP-341)
+    tweakAddXOnlyPubKey,
+    tweakAddXOnlySecKey,
   )
 where
 
