@@ -5,7 +5,7 @@ cabal-version: 2.0
 -- see: https://github.com/sol/hpack
 
 name:           secp256k1-haskell
-version:        1.7.0
+version:        1.8.0
 synopsis:       Bindings for secp256k1
 description:    Sign and verify signatures using the secp256k1 library.
 category:       Crypto
@@ -38,6 +38,8 @@ library
       src
   pkgconfig-depends:
       libsecp256k1
+  c-sources:
+      cbits/illegal_callback.c
   build-depends:
       QuickCheck >=2.9.2
     , base >=4.9 && <5

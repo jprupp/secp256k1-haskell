@@ -1,10 +1,12 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Crypto.Secp256k1Spec (spec) where
 
 import Control.Arrow (first)
+import Control.Exception (evaluate)
 import Control.Monad.Par qualified as P
 import Crypto.Secp256k1
 import Data.Base16.Types (assertBase16, extractBase16)
@@ -18,6 +20,7 @@ import Data.String.Conversions (cs)
 import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Hspec
 import Test.QuickCheck
+import Text.Read (readMaybe)
 
 spec :: Spec
 spec = around withContext $ do
@@ -72,6 +75,110 @@ spec = around withContext $ do
       property $ combinePubKeyEmptyListTest ctx
     it "negates tweak" $ \ctx ->
       property $ negateTweakTest ctx
+    it "combines a key with its negation to nothing" $ \ctx ->
+      property $ combineOppositeTest ctx
+    it "combines two keys like adding their secret keys" $ \ctx ->
+      property $ combineTwoTest ctx
+  describe "validation" $ do
+    it "accepts secret keys 1 and n - 1" $ \_ -> do
+      secKey (hexToBytes one) `shouldSatisfy` isJust
+      secKey (hexToBytes orderMinusOne) `shouldSatisfy` isJust
+    it "rejects secret keys 0, n and above n" $ \_ -> do
+      secKey (hexToBytes zero) `shouldBe` Nothing
+      secKey (hexToBytes order) `shouldBe` Nothing
+      secKey (hexToBytes orderPlusOne) `shouldBe` Nothing
+      secKey (BS.replicate 32 0xff) `shouldBe` Nothing
+    it "rejects secret keys of the wrong length" $ \_ -> do
+      secKey (BS.drop 1 (hexToBytes one)) `shouldBe` Nothing
+      secKey (hexToBytes one <> "\x00") `shouldBe` Nothing
+    it "does not read an invalid secret key" $ \_ -> do
+      (readMaybe (show zero) :: Maybe SecKey) `shouldBe` Nothing
+      (readMaybe (show order) :: Maybe SecKey) `shouldBe` Nothing
+      evaluate (fromString order :: SecKey) `shouldThrow` anyErrorCall
+    it "accepts the internal form of public keys" $ \ctx ->
+      property $ \k ->
+        let p = derivePubKey ctx k in pubKey p.get == Just p
+    it "rejects public keys that are not on the curve" $ \_ -> do
+      pubKey (BS.replicate 64 0) `shouldBe` Nothing
+      pubKey (BS.replicate 64 0xff) `shouldBe` Nothing
+      pubKey (BS.pack [1 .. 64]) `shouldBe` Nothing
+      (readMaybe (show (BS.replicate 64 0x00)) :: Maybe PubKey)
+        `shouldBe` Nothing
+    it "accepts the internal form of signatures" $ \ctx ->
+      property $ \(m, k) ->
+        let g = signMsg ctx k m in sig g.get == Just g
+    it "rejects signatures with components not below the order" $ \_ ->
+      sig (BS.replicate 64 0xff) `shouldBe` Nothing
+    it "rejects compact signatures with components not below the order" $
+      \ctx -> do
+        let s = hexToBytes one
+        importCompactSig ctx (CompactSig (hexToBytes order <> s))
+          `shouldBe` Nothing
+        importCompactSig ctx (CompactSig (s <> hexToBytes order))
+          `shouldBe` Nothing
+        importCompactSig ctx (CompactSig (s <> s)) `shouldSatisfy` isJust
+  describe "invalid raw values" $ do
+    it "verification fails for a zero public key instead of aborting" $
+      \ctx -> property $ \(m, k) ->
+        not $ verifySig ctx (PubKey (BS.replicate 64 0)) (signMsg ctx k m) m
+    it "serializing a zero public key throws instead of aborting" $ \ctx ->
+      evaluate (exportPubKey ctx True (PubKey (BS.replicate 64 0)))
+        `shouldThrow` anyErrorCall
+    it "tweaking a zero public key fails instead of aborting" $ \ctx ->
+      tweakAddPubKey ctx (PubKey (BS.replicate 64 0)) oneTweak
+        `shouldBe` Nothing
+    it "combining a zero public key fails instead of aborting" $ \ctx ->
+      property $ \k ->
+        combinePubKeys ctx [derivePubKey ctx k, PubKey (BS.replicate 64 0)]
+          `shouldBe` Nothing
+    it "rejects values of the wrong length before calling the library" $
+      \ctx -> do
+        let m = Msg (BS.replicate 32 1)
+        evaluate (derivePubKey ctx (SecKey "a")) `shouldThrow` anyErrorCall
+        evaluate (signMsg ctx (SecKey "a") m) `shouldThrow` anyErrorCall
+        evaluate (signMsg ctx (SecKey (hexToBytes one)) (Msg "a"))
+          `shouldThrow` anyErrorCall
+        evaluate (importCompactSig ctx (CompactSig "a"))
+          `shouldThrow` anyErrorCall
+        evaluate (exportSig ctx (Sig "a")) `shouldThrow` anyErrorCall
+        evaluate (exportPubKey ctx True (PubKey "a"))
+          `shouldThrow` anyErrorCall
+        evaluate (tweakAddSecKey ctx (SecKey (hexToBytes one)) (Tweak "a"))
+          `shouldThrow` anyErrorCall
+        evaluate (tweakNegate ctx (Tweak "a")) `shouldThrow` anyErrorCall
+    it "does not modify the inputs of tweaks" $ \ctx ->
+      property $ \k ->
+        let before = BS.copy k.get
+            p = derivePubKey ctx k
+            pBefore = BS.copy p.get
+         in tweakAddSecKey ctx k oneTweak `seq`
+              tweakMulPubKey ctx p oneTweak `seq`
+                (k.get == before && p.get == pBefore)
+
+zero, one, order, orderMinusOne, orderPlusOne :: String
+zero = "0000000000000000000000000000000000000000000000000000000000000000"
+one = "0000000000000000000000000000000000000000000000000000000000000001"
+order = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
+orderMinusOne =
+  "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140"
+orderPlusOne =
+  "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142"
+
+oneTweak :: Tweak
+oneTweak = Tweak (hexToBytes one)
+
+combineOppositeTest :: Ctx -> SecKey -> Bool
+combineOppositeTest ctx k =
+  isNothing (combinePubKeys ctx [p, minusP])
+  where
+    p = derivePubKey ctx k
+    minusOne = fromMaybe (error "negate") (tweakNegate ctx oneTweak)
+    minusP = fromMaybe (error "mul") (tweakMulPubKey ctx p minusOne)
+
+combineTwoTest :: Ctx -> (SecKey, SecKey) -> Property
+combineTwoTest ctx (k1, k2) =
+  combinePubKeys ctx [derivePubKey ctx k1, derivePubKey ctx k2]
+    === (derivePubKey ctx <$> tweakAddSecKey ctx k1 (Tweak k2.get))
 
 hexToBytes :: String -> BS.ByteString
 hexToBytes = decodeBase16 . assertBase16 . B8.pack
