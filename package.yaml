@@ -11,6 +11,11 @@ github: jprupp/secp256k1-haskell
 homepage: http://github.com/jprupp/secp256k1-haskell#readme
 extra-source-files:
   - CHANGELOG.md
+flags:
+  recovery:
+    description: Bind the ECDSA public key recovery module of libsecp256k1. The library must have been built with it (--enable-module-recovery), as the packages of the Linux distributions, Homebrew and Nixpkgs are. Turn the flag off for a library built without it.
+    manual: true
+    default: true
 dependencies:
   - base >=4.9 && <5
   - base16 >=2.0
@@ -30,6 +35,12 @@ library:
     - Paths_secp256k1_haskell
   pkg-config-dependencies:
     - libsecp256k1 >= 0.2.0
+  when:
+    - condition: flag(recovery)
+      exposed-modules:
+        - Crypto.Secp256k1.Internal.Recovery
+        - Crypto.Secp256k1.Internal.RecoveryOps
+        - Crypto.Secp256k1.Recovery
 tests:
   spec:
     main: Spec.hs
@@ -48,3 +59,6 @@ tests:
       - monad-par
       - mtl
       - HUnit
+    when:
+      - condition: flag(recovery)
+        cpp-options: -DRECOVERY

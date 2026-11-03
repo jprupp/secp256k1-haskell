@@ -43,6 +43,13 @@ changes are breaking; see Changed.
 
 ### Added
 
+- ECDSA public key recovery, in the new module `Crypto.Secp256k1.Recovery`:
+  `RecSig`, `recSig`, `signRecMsg`, `recover`, `convertRecSig`,
+  `importCompactRecSig` and `exportCompactRecSig`, bound to the `recovery`
+  module of libsecp256k1. `signRecMsg` gives the signatures of Bitcoin Core's
+  message signing, and `recover` is what its message verification does. The
+  package flag `recovery`, on by default, builds the module; turn it off for a
+  libsecp256k1 built without `--enable-module-recovery`.
 - `signMsgLowR` grinds the nonce until r is below 2^255, with the same extra
   nonce data as Bitcoin Core, so DER signatures are at most 70 bytes and are
   byte-for-byte the same as Bitcoin Core's.
