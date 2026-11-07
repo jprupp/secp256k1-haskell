@@ -155,7 +155,7 @@ works.
 
    ```yaml
    extra-deps:
-     - secp256k1-haskell-2.0.1
+     - secp256k1-haskell-2.1.0
      - base16-2.0
    ```
 
@@ -301,6 +301,8 @@ recommends, to protect against fault attacks.
 
 Here n is the order of the curve. The raw constructors are hidden, so these
 are the only ways to build values. Each type has a `get` field with its bytes.
+`Show` prints hex, except for `SecKey`, which it redacts. See
+[Security notes](#security-notes).
 
 ### Contexts
 
@@ -399,8 +401,11 @@ prop_roundTrip key m =
   garbage collector may copy it, and nothing clears it when it is no longer
   used. If your threat model includes an attacker reading process memory,
   keep keys in a hardware device instead.
-- **`Show` prints secret keys.** Showing a record that holds a `SecKey`, in a
-  log line or an error message, reveals it.
+- **`Show` redacts secret keys.** `show` on a `SecKey` gives `SecKey <redacted>`,
+  so a record that holds a key and derives `Show` can go in a log line or an
+  error message. Only `Show` is redacted. `get` gives the bytes, and `Read`
+  and `IsString` parse hex, so a key you write out yourself is yours to
+  protect.
 - **Verification only proves what was signed.** It is your protocol's job to
   hash the right data; signing a hash an attacker chose is as good as signing
   whatever they want.

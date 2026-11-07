@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-11-07
+
+### Changed
+
+- `show` of a `SecKey` prints `SecKey <redacted>` instead of the key in hex,
+  so that a record which holds a key and derives `Show` can be logged or put
+  in an error message without revealing it. `Read` and `IsString` still parse
+  hex, so `read (show key)` no longer gives the key back. Use `get` to write
+  a key out.
+
 ## [2.0.1] - 2026-11-07
 
 ### Changed
