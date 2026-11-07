@@ -1,5 +1,5 @@
 name: secp256k1-haskell
-version: 2.0.1
+version: 2.1.0
 synopsis: Bindings for secp256k1
 description: Sign and verify signatures using the secp256k1 library.
 category: Crypto

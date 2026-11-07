@@ -339,10 +339,12 @@ secretKeySpec = describe "secret keys" $ do
       `shouldBe` "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
   it "derives the historical public key" $ \ctx ->
     bytesToHex (exportPubKey ctx False (derivePubKey ctx histKey)) `shouldBe` histPub
-  it "shows the key in hex" $ \_ ->
-    show keyOne `shouldBe` quoted one
-  it "shows and reads" $ \_ ->
-    property (showRead :: SecKey -> Bool)
+  it "shows a placeholder instead of the key" $ \_ ->
+    property $ \(k :: SecKey) -> show k == "SecKey <redacted>"
+  it "parenthesizes the placeholder inside a larger value" $ \_ ->
+    show (Just keyOne) `shouldBe` "Just (SecKey <redacted>)"
+  it "reads the key from hex" $ \_ ->
+    read (quoted one) `shouldBe` keyOne
   it "reads from a string" $ \_ ->
     property $ \(k :: SecKey) -> fromString (bytesToHex k.get) == k
   it "does not read an invalid key" $ \_ -> do

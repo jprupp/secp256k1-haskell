@@ -143,10 +143,11 @@ newtype Sig = Sig {get :: ByteString}
 -- | 32-byte secret key as a big-endian number in the range 1 to n−1, where n
 -- is the order of the curve.
 --
--- 'Show', 'Read' and 'IsString' use hex. 'Show' prints the key, so showing a
--- record that holds a key, in a log line or an error message for instance,
--- reveals it. The bytes live in an ordinary 'ByteString', so the garbage
--- collector copies them and nothing ever clears them from memory.
+-- 'Read' and 'IsString' use hex. 'Show' prints @SecKey \<redacted\>@ and never
+-- the key, so a record that holds a key and derives 'Show' can go in a log
+-- line or an error message without revealing it. Read the bytes from @get@
+-- when you mean to write a key out. They live in an ordinary 'ByteString', so
+-- the garbage collector copies them and nothing ever clears them from memory.
 newtype SecKey = SecKey {get :: ByteString}
   deriving (Eq, Generic, Hashable, NFData)
 
@@ -217,8 +218,19 @@ instance IsString SecKey where
     where
       e = error "Could not decode secret key from hex string"
 
+-- | Prints @SecKey \<redacted\>@. A secret key reaches 'show' by accident more
+-- often than on purpose: a record that holds one and derives 'Show', an
+-- error message, a debug trace, a REPL. None of those should reveal it.
+--
+-- The placeholder is constant. Showing the public key instead would tell
+-- keys apart, but it needs a context and a point multiplication for every
+-- 'show', and a raw key of invalid content from this module has no public
+-- key. Call 'derivePubKey' and show that when you need to identify a key.
+--
+-- 'Read' is not the inverse of 'Show' for this type. It still parses hex, so
+-- that keys can be written as literals and read from configuration.
 instance Show SecKey where
-  showsPrec _ = showsHex . (.get)
+  showsPrec d _ = showParen (d > 10) $ showString "SecKey <redacted>"
 
 instance Read Tweak where
   readPrec = parens $ do

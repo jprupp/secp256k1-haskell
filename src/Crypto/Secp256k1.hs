@@ -61,7 +61,9 @@
 --
 -- 'Show', 'Read' and 'Data.String.IsString' use hex of a standard encoding: compressed
 -- SEC1 for 'PubKey', compact for 'Sig', and the plain bytes for the others.
--- 'Show' prints secret keys. See 'SecKey' for what that means for logging.
+-- The one exception is 'Show' for 'SecKey', which prints @SecKey \<redacted\>@
+-- instead of the key, so that a key never reaches a log by accident. 'Read'
+-- and 'Data.String.IsString' for 'SecKey' still parse hex.
 --
 -- The raw constructors are not exported from this module. They are in
 -- "Crypto.Secp256k1.Internal.Base", which has no API stability guarantee.
