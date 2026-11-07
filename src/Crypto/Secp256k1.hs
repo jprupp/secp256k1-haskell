@@ -3,6 +3,41 @@
 -- | ECDSA and BIP-340 Schnorr signatures on the secp256k1 curve, through
 -- <https://github.com/bitcoin-core/secp256k1 libsecp256k1>.
 --
+-- == Purpose
+--
+-- secp256k1 is the elliptic curve of Bitcoin, and libsecp256k1 is the C
+-- library Bitcoin Core uses for it: constant-time where secrets are involved,
+-- hardened against side channels, exhaustively tested and reviewed. Getting
+-- elliptic curve cryptography right is hard enough that a Haskell program
+-- should not reimplement it. This package gives Haskell the same library, with
+-- types that make the common mistakes hard to make.
+--
+-- == Design
+--
+-- * __Valid by construction.__ Every value goes through a smart constructor or
+--   an import function that checks it. Code that holds a 'PubKey' or a 'Sig'
+--   never has to wonder whether it is a point on the curve or a well-formed
+--   signature, and invalid input is refused at the boundary where it arrives.
+--
+-- * __Never abort.__ The C library calls @abort()@ on an illegal argument by
+--   default, which kills the whole Haskell process and cannot be caught. Every
+--   context this package creates replaces that callback, so a bad argument
+--   becomes 'Nothing', 'False' or an exception instead.
+--
+-- * __Pure where the mathematics is pure.__ Signing, verifying and tweaking are
+--   deterministic functions of their inputs, so they are pure functions here.
+--   Only the operations that need fresh randomness, such as 'signSchnorrIO'
+--   and 'randomizeContext', run in 'IO'.
+--
+-- * __Standard encodings at the edges.__ Values print and parse in the encodings
+--   other software understands (SEC1, DER, compact, BIP-340), never in the
+--   library's internal memory layout, which differs between platforms.
+--
+-- * __Bitcoin Core compatibility is explicit.__ Where Bitcoin Core does
+--   something beyond the standards, such as low-R grinding or accepting high-S
+--   signatures from old blocks, this package offers it as a separate function
+--   and documents the difference, rather than silently picking one behaviour.
+--
 -- == Values
 --
 -- Every value is built through a smart constructor or an import function

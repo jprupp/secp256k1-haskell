@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-11-07
+
+### Changed
+
+- Documentation: the README explains the purpose and design of the bindings,
+  with installation steps for every platform, a tutorial, a usage guide, the
+  differences from Bitcoin Core and security notes. Every module, including
+  the foreign imports, has Haddock, and the main module and key functions say
+  why they work the way they do.
+- CI builds, tests and documents the package with Stack, against the
+  libsecp256k1 of Ubuntu and with `stack --nix`.
+- Build with Stackage nightly-2026-11-07.
+
 ## [2.0.0] - 2026-11-03
 
 This release follows a review of the bindings, including the changes of

@@ -274,6 +274,7 @@ curveOrder =
       0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41
     ]
 
+-- | Thirty-two zero bytes.
 zero32 :: ByteString
 zero32 = BS.replicate 32 0
 
@@ -502,6 +503,12 @@ exportSig (Ctx fctx) (Sig in_sig) =
 -- | Verify a signature over a message hash. 'True' means the signature is
 -- valid for the key and the hash and is in lower-S form. A valid signature
 -- in high-S form gives 'False'. Apply 'normalizeSig' first to accept it.
+--
+-- The lower-S rule exists because ECDSA signatures are malleable: if (r, s)
+-- is valid, so is (r, n − s). Anyone could change a transaction's signature,
+-- and therefore its id, without the key. Accepting only one of the two forms
+-- removes that freedom, which is why libsecp256k1 and Bitcoin's relay rules
+-- insist on it.
 verifySig :: Ctx -> PubKey -> Sig -> Msg -> Bool
 verifySig (Ctx fctx) (PubKey pub_key) (Sig sig_bs) (Msg m) =
   unsafePerformIO $ withForeignPtr fctx $ \ctx ->
@@ -512,6 +519,12 @@ verifySig (Ctx fctx) (PubKey pub_key) (Sig sig_bs) (Msg m) =
 
 -- | Sign a message hash. The nonce comes from RFC 6979, so the same key and
 -- hash always give the same signature. The signature is in lower-S form.
+--
+-- Deterministic nonces are the reason this is a pure function, and they are a
+-- safety feature, not a convenience: an ECDSA nonce that repeats, or that is
+-- even slightly predictable, reveals the secret key. Deriving it from the key
+-- and the hash, as RFC 6979 does, removes the need for a good random number
+-- generator at signing time.
 signMsg :: Ctx -> SecKey -> Msg -> Sig
 signMsg ctx key m = signMsgWith ctx key m Nothing
 
@@ -542,6 +555,10 @@ signMsgWith (Ctx fctx) (SecKey sec_key) (Msg m) nonce_data =
 -- nonce data (a 32-bit little-endian counter padded to 32 bytes), so the
 -- signatures are the same as Bitcoin Core's. On average it takes two
 -- attempts. The result is still deterministic.
+--
+-- Use it where the size of a signature matters, as in Bitcoin transactions,
+-- where every byte costs a fee, or where signatures must match Bitcoin Core's
+-- byte for byte. Use 'signMsg' where the RFC 6979 test vectors must hold.
 signMsgLowR :: Ctx -> SecKey -> Msg -> Sig
 signMsgLowR ctx key m = go 0 (signMsg ctx key m)
   where
@@ -556,6 +573,9 @@ signMsgLowR ctx key m = go 0 (signMsg ctx key m)
         <> BS.replicate 28 0
 
 -- | Compute the public key of a secret key.
+--
+-- It is a pure function and cannot fail, because a 'SecKey' is valid by
+-- construction.
 derivePubKey :: Ctx -> SecKey -> PubKey
 derivePubKey (Ctx fctx) (SecKey sec_key) =
   unsafePerformIO $ withForeignPtr fctx $ \ctx ->
@@ -567,6 +587,11 @@ derivePubKey (Ctx fctx) (SecKey sec_key) =
 -- | Add a tweak to a secret key: @key + tweak mod n@. 'Nothing' when the
 -- result would be zero, which happens when the tweak is the negation of the
 -- key.
+--
+-- Tweaks are the building block of key derivation: BIP-32 child keys are a
+-- parent key plus a tweak, and Taproot outputs are an internal key plus a
+-- tweak. 'tweakAddPubKey' does the same on the public side, which is what lets
+-- a watch-only wallet derive addresses without any secret.
 tweakAddSecKey :: Ctx -> SecKey -> Tweak -> Maybe SecKey
 tweakAddSecKey (Ctx fctx) (SecKey sec_key) (Tweak t) =
   unsafePerformIO $ withForeignPtr fctx $ \ctx ->

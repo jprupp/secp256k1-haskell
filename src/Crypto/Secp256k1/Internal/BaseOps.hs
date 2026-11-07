@@ -1,3 +1,12 @@
+-- | Foreign imports of the core, @extrakeys@ and @schnorrsig@ modules of libsecp256k1.
+--
+-- Each function is a direct binding to the C function of the same name in
+-- @secp256k1.h@, @secp256k1_extrakeys.h@ or @secp256k1_schnorrsig.h@. The
+-- bindings are @safe@ calls: signing and verifying take tens of microseconds,
+-- and a @safe@ call lets other Haskell threads run meanwhile. Never call these
+-- directly with unchecked inputs; "Crypto.Secp256k1.Internal.Base" validates
+-- lengths and contents first. This module is internal and has no API
+-- stability guarantee.
 module Crypto.Secp256k1.Internal.BaseOps where
 
 import Crypto.Secp256k1.Internal.ForeignTypes
@@ -24,6 +33,7 @@ import Foreign.C
     CUInt (..),
   )
 
+-- | Binding to @secp256k1_ec_pubkey_parse@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_parse"
   ecPubKeyParse ::
     Ptr LCtx ->
@@ -34,6 +44,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_parse"
     CSize ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_pubkey_serialize@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_serialize"
   ecPubKeySerialize ::
     Ptr LCtx ->
@@ -45,6 +56,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_serialize"
     SerFlags ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_signature_parse_compact@.
 foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_parse_compact"
   ecdsaSignatureParseCompact ::
     Ptr LCtx ->
@@ -52,6 +64,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_parse_compact"
     Ptr Compact64 ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_signature_parse_der@.
 foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_parse_der"
   ecdsaSignatureParseDer ::
     Ptr LCtx ->
@@ -62,6 +75,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_parse_der"
     CSize ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_signature_serialize_der@.
 foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_serialize_der"
   ecdsaSignatureSerializeDer ::
     Ptr LCtx ->
@@ -72,6 +86,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_serialize_der"
     Ptr Sig64 ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_signature_serialize_compact@.
 foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_serialize_compact"
   ecdsaSignatureSerializeCompact ::
     Ptr LCtx ->
@@ -79,6 +94,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_serialize_compa
     Ptr Sig64 ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_verify@.
 foreign import ccall safe "secp256k1.h secp256k1_ecdsa_verify"
   ecdsaVerify ::
     Ptr LCtx ->
@@ -87,6 +103,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ecdsa_verify"
     Ptr PubKey64 ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_signature_normalize@.
 foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_normalize"
   ecdsaSignatureNormalize ::
     Ptr LCtx ->
@@ -96,6 +113,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ecdsa_signature_normalize"
     Ptr Sig64 ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_sign@.
 foreign import ccall safe "secp256k1.h secp256k1_ecdsa_sign"
   ecdsaSign ::
     Ptr LCtx ->
@@ -107,12 +125,14 @@ foreign import ccall safe "secp256k1.h secp256k1_ecdsa_sign"
     Ptr a ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_seckey_verify@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_seckey_verify"
   ecSecKeyVerify ::
     Ptr LCtx ->
     Ptr SecKey32 ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_pubkey_create@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_create"
   ecPubKeyCreate ::
     Ptr LCtx ->
@@ -120,6 +140,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_create"
     Ptr SecKey32 ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_seckey_tweak_add@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_seckey_tweak_add"
   ecSecKeyTweakAdd ::
     Ptr LCtx ->
@@ -127,12 +148,14 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_seckey_tweak_add"
     Ptr Tweak32 ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_seckey_negate@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_seckey_negate"
   ecTweakNegate ::
     Ptr LCtx ->
     Ptr Tweak32 ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_pubkey_tweak_add@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_tweak_add"
   ecPubKeyTweakAdd ::
     Ptr LCtx ->
@@ -140,6 +163,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_tweak_add"
     Ptr Tweak32 ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_seckey_tweak_mul@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_seckey_tweak_mul"
   ecSecKeyTweakMul ::
     Ptr LCtx ->
@@ -147,6 +171,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_seckey_tweak_mul"
     Ptr Tweak32 ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_pubkey_tweak_mul@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_tweak_mul"
   ecPubKeyTweakMul ::
     Ptr LCtx ->
@@ -154,6 +179,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_tweak_mul"
     Ptr Tweak32 ->
     IO Ret
 
+-- | Binding to @secp256k1_ec_pubkey_combine@.
 foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_combine"
   ecPubKeyCombine ::
     Ptr LCtx ->
@@ -168,6 +194,7 @@ foreign import ccall safe "secp256k1.h secp256k1_ec_pubkey_combine"
 -- The following functions belong to the @extrakeys@ and @schnorrsig@ modules
 -- of libsecp256k1, enabled by default since version 0.2.0.
 
+-- | Binding to @secp256k1_xonly_pubkey_from_pubkey@.
 foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_from_pubkey"
   xOnlyPubKeyFromPubKey ::
     Ptr LCtx ->
@@ -177,6 +204,7 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_from_pub
     Ptr PubKey64 ->
     IO Ret
 
+-- | Binding to @secp256k1_xonly_pubkey_serialize@.
 foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_serialize"
   xOnlyPubKeySerialize ::
     Ptr LCtx ->
@@ -185,6 +213,7 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_serializ
     Ptr XOnlyPubKey64 ->
     IO Ret
 
+-- | Binding to @secp256k1_xonly_pubkey_tweak_add@.
 foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_tweak_add"
   xOnlyPubKeyTweakAdd ::
     Ptr LCtx ->
@@ -194,6 +223,7 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_xonly_pubkey_tweak_ad
     Ptr Tweak32 ->
     IO Ret
 
+-- | Binding to @secp256k1_keypair_create@.
 foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_create"
   keyPairCreate ::
     Ptr LCtx ->
@@ -201,6 +231,7 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_create"
     Ptr SecKey32 ->
     IO Ret
 
+-- | Binding to @secp256k1_keypair_sec@.
 foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_sec"
   keyPairSec ::
     Ptr LCtx ->
@@ -208,6 +239,7 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_sec"
     Ptr KeyPair96 ->
     IO Ret
 
+-- | Binding to @secp256k1_keypair_xonly_pub@.
 foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_xonly_pub"
   keyPairXOnlyPub ::
     Ptr LCtx ->
@@ -217,6 +249,7 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_xonly_pub"
     Ptr KeyPair96 ->
     IO Ret
 
+-- | Binding to @secp256k1_keypair_xonly_tweak_add@.
 foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_xonly_tweak_add"
   keyPairXOnlyTweakAdd ::
     Ptr LCtx ->
@@ -224,6 +257,7 @@ foreign import ccall safe "secp256k1_extrakeys.h secp256k1_keypair_xonly_tweak_a
     Ptr Tweak32 ->
     IO Ret
 
+-- | Binding to @secp256k1_schnorrsig_sign32@.
 foreign import ccall safe "secp256k1_schnorrsig.h secp256k1_schnorrsig_sign32"
   schnorrSigSign32 ::
     Ptr LCtx ->
@@ -234,6 +268,7 @@ foreign import ccall safe "secp256k1_schnorrsig.h secp256k1_schnorrsig_sign32"
     Ptr AuxRand32 ->
     IO Ret
 
+-- | Binding to @secp256k1_schnorrsig_verify@.
 foreign import ccall safe "secp256k1_schnorrsig.h secp256k1_schnorrsig_verify"
   schnorrSigVerify ::
     Ptr LCtx ->

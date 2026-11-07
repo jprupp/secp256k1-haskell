@@ -18,6 +18,7 @@ import Crypto.Secp256k1.Internal.ForeignTypes
 import Foreign (FunPtr, Ptr)
 import Foreign.C (CInt (..))
 
+-- | Binding to @secp256k1_ecdsa_recoverable_signature_parse_compact@.
 foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_recoverable_signature_parse_compact"
   ecdsaRecoverableSignatureParseCompact ::
     Ptr LCtx ->
@@ -27,6 +28,7 @@ foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_recoverable_sign
     CInt ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_recoverable_signature_serialize_compact@.
 foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_recoverable_signature_serialize_compact"
   ecdsaRecoverableSignatureSerializeCompact ::
     Ptr LCtx ->
@@ -36,6 +38,7 @@ foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_recoverable_sign
     Ptr RecSig65 ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_recoverable_signature_convert@.
 foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_recoverable_signature_convert"
   ecdsaRecoverableSignatureConvert ::
     Ptr LCtx ->
@@ -45,6 +48,7 @@ foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_recoverable_sign
     Ptr RecSig65 ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_sign_recoverable@.
 foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_sign_recoverable"
   ecdsaSignRecoverable ::
     Ptr LCtx ->
@@ -56,6 +60,7 @@ foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_sign_recoverable
     Ptr a ->
     IO Ret
 
+-- | Binding to @secp256k1_ecdsa_recover@.
 foreign import ccall safe "secp256k1_recovery.h secp256k1_ecdsa_recover"
   ecdsaRecover ::
     Ptr LCtx ->
