@@ -1,4 +1,4 @@
-resolver: nightly-2026-10-28
+resolver: nightly-2026-11-07
 extra-deps:
   - base16-2.0
 nix:

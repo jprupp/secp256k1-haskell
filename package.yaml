@@ -1,5 +1,5 @@
 name: secp256k1-haskell
-version: 2.0.0
+version: 2.0.1
 synopsis: Bindings for secp256k1
 description: Sign and verify signatures using the secp256k1 library.
 category: Crypto
@@ -11,6 +11,7 @@ github: jprupp/secp256k1-haskell
 homepage: http://github.com/jprupp/secp256k1-haskell#readme
 extra-source-files:
   - CHANGELOG.md
+  - README.md
 flags:
   recovery:
     description: Bind the ECDSA public key recovery module of libsecp256k1. The library must have been built with it (--enable-module-recovery), as the packages of the Linux distributions, Homebrew and Nixpkgs are. Turn the flag off for a library built without it.

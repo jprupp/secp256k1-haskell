@@ -108,25 +108,31 @@ sign = 0x0201
 signVerify :: CtxFlags
 signVerify = 0x0301
 
+-- | Binding to @secp256k1_context_create@.
 foreign import ccall safe "secp256k1.h secp256k1_context_create"
   contextCreate ::
     CtxFlags ->
     IO (Ptr LCtx)
 
+-- | Binding to @secp256k1_context_clone@.
 foreign import ccall safe "secp256k1.h secp256k1_context_clone"
   contextClone ::
     Ptr LCtx ->
     IO (Ptr LCtx)
 
+-- | Binding to @secp256k1_context_destroy@.
 foreign import ccall safe "secp256k1.h secp256k1_context_destroy"
   contextDestroy :: Ptr LCtx -> IO ()
 
+-- | Pointer to @secp256k1_context_destroy@, for use as a finalizer or callback.
 foreign import ccall safe "secp256k1.h &secp256k1_context_destroy"
   contextDestroyFunPtr :: FunPtr (Ptr LCtx -> IO ())
 
+-- | Pointer to @secp256k1_haskell_illegal_callback@, for use as a finalizer or callback.
 foreign import ccall safe "&secp256k1_haskell_illegal_callback"
   illegalCallbackFunPtr :: FunPtr (CString -> Ptr a -> IO ())
 
+-- | Binding to @secp256k1_context_set_illegal_callback@.
 foreign import ccall safe "secp256k1.h secp256k1_context_set_illegal_callback"
   setIllegalCallback ::
     Ptr LCtx ->
@@ -136,6 +142,7 @@ foreign import ccall safe "secp256k1.h secp256k1_context_set_illegal_callback"
     Ptr a ->
     IO ()
 
+-- | Binding to @secp256k1_context_set_error_callback@.
 foreign import ccall safe "secp256k1.h secp256k1_context_set_error_callback"
   setErrorCallback ::
     Ptr LCtx ->
@@ -145,6 +152,7 @@ foreign import ccall safe "secp256k1.h secp256k1_context_set_error_callback"
     Ptr a ->
     IO ()
 
+-- | Binding to @secp256k1_context_randomize@.
 foreign import ccall safe "secp256k1.h secp256k1_context_randomize"
   contextRandomize ::
     Ptr LCtx ->

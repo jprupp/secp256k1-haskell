@@ -1,5 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 
+-- | Helpers to move bytes between Haskell and the C library safely.
+--
+-- Most mistakes in C bindings are about memory: passing a buffer of the wrong
+-- size, letting the C side write into a 'ByteString' that other code shares,
+-- or leaking a buffer when an exception is thrown. Every binding goes through
+-- these functions, which check lengths before calling C, give the C library
+-- fresh buffers to write into, and free them on every path. This module is
+-- internal and has no API stability guarantee.
 module Crypto.Secp256k1.Internal.Util where
 
 import Control.Exception (onException)
@@ -14,20 +22,26 @@ import Foreign (Ptr, castPtr, copyBytes, free, mallocBytes)
 import Foreign.C (CSize (..))
 import System.Entropy (getEntropy)
 
+-- | Decode hex, or 'Nothing' if the string is not valid hex.
 decodeHex :: (ConvertibleStrings a ByteString) => a -> Maybe ByteString
 decodeHex str =
   case parseBase16 $ cs str of
     Right b16 -> Just $ decodeBase16 b16
     Left _ -> Nothing
 
+-- | Show bytes as a quoted hex string.
 showsHex :: ByteString -> ShowS
 showsHex = shows . extractBase16 . encodeBase16
 
+-- | Pass the bytes of a 'ByteString' to C without copying them. Only for
+-- arguments that the C library reads and never writes: writing would change a
+-- 'ByteString' that may be shared.
 unsafeUseByteString :: ByteString -> ((Ptr a, CSize) -> IO b) -> IO b
 unsafeUseByteString bs f =
   BU.unsafeUseAsCStringLen bs $ \(b, l) ->
     f (castPtr b, fromIntegral l)
 
+-- | Pass a copy of the bytes of a 'ByteString' to C.
 useByteString :: ByteString -> ((Ptr a, CSize) -> IO b) -> IO b
 useByteString bs f =
   BS.useAsCStringLen bs $ \(b, l) ->
@@ -82,14 +96,17 @@ withCopy name len bs f =
       copyBytes dst (castPtr src) len
       f dst
 
+-- | Take ownership of a @malloc@'ed buffer as a 'ByteString', without copying.
 unsafePackByteString :: (Ptr a, CSize) -> IO ByteString
 unsafePackByteString (b, l) =
   BU.unsafePackMallocCStringLen (castPtr b, fromIntegral l)
 
+-- | Copy a C buffer into a new 'ByteString'.
 packByteString :: (Ptr a, CSize) -> IO ByteString
 packByteString (b, l) =
   BS.packCStringLen (castPtr b, fromIntegral l)
 
+-- | Pass 32 bytes from the operating system's secure random source to C.
 withRandomSeed :: (Ptr Seed32 -> IO a) -> IO a
 withRandomSeed go = do
   bs <- getEntropy 32
