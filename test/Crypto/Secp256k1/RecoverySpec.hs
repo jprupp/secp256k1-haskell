@@ -33,7 +33,7 @@ import Test.QuickCheck
 import Text.Read (readMaybe)
 
 spec :: Spec
-spec = around withContext $ describe "public key recovery" $ do
+spec = describe "public key recovery" $ do
   signingSpec
   recoverySpec
   formulaSpec
@@ -130,161 +130,161 @@ genNegatedOverX = "028ff83d8cf12121491609c4939dc11c4aa35503508fe432dc5a5c1905608
 
 -- * Signing
 
-signingSpec :: SpecWith Ctx
+signingSpec :: Spec
 signingSpec = describe "signing" $ do
-  it "produces Bitcoin Core's SignCompact signature of sha256d 'Very deterministic message'" $ \ctx ->
-    exportCompactRecSig ctx (signRecMsg ctx coreKey coreMsg)
+  it "produces Bitcoin Core's SignCompact signature of sha256d 'Very deterministic message'" $
+    exportCompactRecSig (signRecMsg coreKey coreMsg)
       `shouldBe` (fromString (coreR ++ coreS), coreRecId)
-  it "produces Bitcoin Core's signmessage signature of 'Trust no one'" $ \ctx ->
-    exportCompactRecSig ctx (signRecMsg ctx messageKey messageHash)
+  it "produces Bitcoin Core's signmessage signature of 'Trust no one'" $
+    exportCompactRecSig (signRecMsg messageKey messageHash)
       `shouldBe` (fromString (messageR ++ messageS), 1)
-  it "produces the RFC 6979 vector with recovery id 1" $ \ctx ->
-    exportCompactRecSig ctx (signRecMsg ctx keyOne satoshiMsg)
+  it "produces the RFC 6979 vector with recovery id 1" $
+    exportCompactRecSig (signRecMsg keyOne satoshiMsg)
       `shouldBe` (fromString (satoshiR ++ satoshiS), 1)
-  it "keeps a high r, as Bitcoin Core's message signing does" $ \ctx -> do
-    exportCompactRecSig ctx (signRecMsg ctx keyOne highRMsg)
+  it "keeps a high r, as Bitcoin Core's message signing does" $ do
+    exportCompactRecSig (signRecMsg keyOne highRMsg)
       `shouldBe` (fromString (highRR ++ highRS), 0)
-    convertRecSig ctx (signRecMsg ctx keyOne highRMsg) `shouldNotBe` signMsgLowR ctx keyOne highRMsg
-  it "signs with the r and s of signMsg" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> convertRecSig ctx (signRecMsg ctx k m) == signMsg ctx k m
-  it "is deterministic" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> signRecMsg ctx k m == signRecMsg ctx k m
-  it "gives a recovery id of 0 or 1" $ \ctx ->
+    convertRecSig (signRecMsg keyOne highRMsg) `shouldNotBe` signMsgLowR keyOne highRMsg
+  it "signs with the r and s of signMsg" $
+    property $ \(m :: Msg, k :: SecKey) -> convertRecSig (signRecMsg k m) == signMsg k m
+  it "is deterministic" $
+    property $ \(m :: Msg, k :: SecKey) -> signRecMsg k m == signRecMsg k m
+  it "gives a recovery id of 0 or 1" $
     -- The ids 2 and 3 need r below p - n, about one signature in 2^128.
     property $ \(m :: Msg, k :: SecKey) ->
-      snd (exportCompactRecSig ctx (signRecMsg ctx k m)) `elem` [0, 1]
-  it "produces lower-S signatures" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> isLowS ctx (convertRecSig ctx (signRecMsg ctx k m))
-  it "signs and recovers in parallel" $ \ctx ->
+      snd (exportCompactRecSig (signRecMsg k m)) `elem` [0, 1]
+  it "produces lower-S signatures" $
+    property $ \(m :: Msg, k :: SecKey) -> isLowS (convertRecSig (signRecMsg k m))
+  it "signs and recovers in parallel" $
     property $ \(xs :: [(Msg, SecKey)]) -> P.runPar $ do
-      results <- mapM (P.spawnP . signsAndRecovers ctx) xs
+      results <- mapM (P.spawnP . signsAndRecovers) xs
       and <$> mapM P.get results
   where
-    signsAndRecovers ctx (m, k) =
-      recover ctx (signRecMsg ctx k m) m == Just (derivePubKey ctx k)
+    signsAndRecovers (m, k) =
+      recover (signRecMsg k m) m == Just (derivePubKey k)
 
 -- * Recovery
 
-recoverySpec :: SpecWith Ctx
+recoverySpec :: Spec
 recoverySpec = describe "recovery" $ do
-  it "recovers the key of Bitcoin Core's SignCompact vector" $ \ctx ->
-    recovered ctx (coreR ++ coreS ++ "01") coreMsg `shouldBe` Just corePub
-  it "recovers another key with the other recovery id" $ \ctx ->
-    recovered ctx (coreR ++ coreS ++ "00") coreMsg `shouldBe` Just coreOtherPub
-  it "recovers the signer of Bitcoin Core's 'Trust no one' message" $ \ctx ->
-    recovered ctx (messageR ++ messageS ++ "01") messageHash `shouldBe` Just messagePub
-  it "recovers G from the RFC 6979 vector" $ \ctx -> do
-    recovered ctx (satoshiR ++ satoshiS ++ "01") satoshiMsg `shouldBe` Just genCompressed
-    recovered ctx (satoshiR ++ satoshiS ++ "00") satoshiMsg `shouldBe` Just satoshiOtherPub
-  it "recovers the signing key" $ \ctx ->
+  it "recovers the key of Bitcoin Core's SignCompact vector" $
+    recovered (coreR ++ coreS ++ "01") coreMsg `shouldBe` Just corePub
+  it "recovers another key with the other recovery id" $
+    recovered (coreR ++ coreS ++ "00") coreMsg `shouldBe` Just coreOtherPub
+  it "recovers the signer of Bitcoin Core's 'Trust no one' message" $
+    recovered (messageR ++ messageS ++ "01") messageHash `shouldBe` Just messagePub
+  it "recovers G from the RFC 6979 vector" $ do
+    recovered (satoshiR ++ satoshiS ++ "01") satoshiMsg `shouldBe` Just genCompressed
+    recovered (satoshiR ++ satoshiS ++ "00") satoshiMsg `shouldBe` Just satoshiOtherPub
+  it "recovers the signing key" $
     property $ \(m :: Msg, k :: SecKey) ->
-      recover ctx (signRecMsg ctx k m) m == Just (derivePubKey ctx k)
-  it "recovers a different key for another message" $ \ctx ->
+      recover (signRecMsg k m) m == Just (derivePubKey k)
+  it "recovers a different key for another message" $
     property $ \(m :: Msg, m' :: Msg, k :: SecKey) ->
-      m /= m' ==> recover ctx (signRecMsg ctx k m) m' /= Just (derivePubKey ctx k)
-  it "recovers the same key from the high-S form with the parity bit flipped" $ \ctx -> do
+      m /= m' ==> recover (signRecMsg k m) m' /= Just (derivePubKey k)
+  it "recovers the same key from the high-S form with the parity bit flipped" $ do
     -- The RFC 6979 vector with s replaced by n - s and the id 1 turned into 0.
-    recovered ctx (satoshiR ++ satoshiHighS ++ "00") satoshiMsg `shouldBe` Just genCompressed
-    recovered ctx (satoshiR ++ satoshiHighS ++ "01") satoshiMsg `shouldNotBe` Just genCompressed
-  it "does not apply the lower-S rule" $ \ctx ->
+    recovered (satoshiR ++ satoshiHighS ++ "00") satoshiMsg `shouldBe` Just genCompressed
+    recovered (satoshiR ++ satoshiHighS ++ "01") satoshiMsg `shouldNotBe` Just genCompressed
+  it "does not apply the lower-S rule" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let (compact, i) = exportCompactRecSig ctx (signRecMsg ctx k m)
+      let (compact, i) = exportCompactRecSig (signRecMsg k m)
           (r, s) = BS.splitAt 32 compact.get
           -- n - s, through the negation of a tweak.
-          highS = (fromJust (tweakNegate ctx (fromJust (tweak s)))).get
-          high = fromJust (importCompactRecSig ctx (fromJust (compactSig (r <> highS))) (i `xor` 1))
-       in recover ctx high m == Just (derivePubKey ctx k)
+          highS = (fromJust (tweakNegate (fromJust (tweak s)))).get
+          high = fromJust (importCompactRecSig (fromJust (compactSig (r <> highS))) (i `xor` 1))
+       in recover high m == Just (derivePubKey k)
   where
-    recovered ctx sigHex m = bytesToHex . exportPubKey ctx True <$> recover ctx (fromString sigHex) m
+    recovered sigHex m = bytesToHex . exportPubKey True <$> recover (fromString sigHex) m
 
 -- * The formula
 
-formulaSpec :: SpecWith Ctx
+formulaSpec :: Spec
 formulaSpec = describe "the formula Q = r⁻¹(s·R − e·G)" $ do
-  it "gives R itself for r = 1, s = 1 and a zero hash" $ \ctx ->
-    recovered ctx (one ++ one ++ "00") zero `shouldBe` Just pointOne
-  it "takes the parity of y from the recovery id" $ \ctx ->
-    recovered ctx (one ++ one ++ "01") zero `shouldBe` Just ("03" ++ one)
-  it "reduces the hash modulo n" $ \ctx ->
-    recovered ctx (one ++ one ++ "00") order `shouldBe` Just pointOne
-  it "subtracts e·G" $ \ctx ->
-    recovered ctx (one ++ one ++ "00") one `shouldBe` Just pointOneMinusG
-  it "multiplies by s" $ \ctx -> do
-    recovered ctx (one ++ two ++ "00") zero `shouldBe` Just twicePointOne
-    recovered ctx (one ++ orderMinusOne ++ "00") zero `shouldBe` Just ("03" ++ one)
-  it "divides by r" $ \ctx ->
-    recovered ctx (two ++ one ++ "02") zero `shouldBe` Just halfPointOrderPlusTwo
-  it "uses r + n as the x coordinate for the ids 2 and 3" $ \ctx -> do
-    recovered ctx (two ++ two ++ "02") zero `shouldBe` Just ("02" ++ orderPlusTwo)
-    recovered ctx (two ++ two ++ "03") zero `shouldBe` Just ("03" ++ orderPlusTwo)
-  it "gives nothing when no point has the x coordinate" $ \ctx -> do
-    recovered ctx (five ++ one ++ "00") zero `shouldBe` Nothing
-    recovered ctx (one ++ one ++ "02") zero `shouldBe` Nothing
-    recovered ctx (fieldMinusOrderMinusOne ++ one ++ "02") zero `shouldBe` Nothing
-  it "gives nothing when r + n reaches the field size" $ \ctx ->
-    recovered ctx (fieldMinusOrder ++ one ++ "02") zero `shouldBe` Nothing
-  it "gives nothing when s·R − e·G is the point at infinity" $ \ctx -> do
+  it "gives R itself for r = 1, s = 1 and a zero hash" $
+    recovered (one ++ one ++ "00") zero `shouldBe` Just pointOne
+  it "takes the parity of y from the recovery id" $
+    recovered (one ++ one ++ "01") zero `shouldBe` Just ("03" ++ one)
+  it "reduces the hash modulo n" $
+    recovered (one ++ one ++ "00") order `shouldBe` Just pointOne
+  it "subtracts e·G" $
+    recovered (one ++ one ++ "00") one `shouldBe` Just pointOneMinusG
+  it "multiplies by s" $ do
+    recovered (one ++ two ++ "00") zero `shouldBe` Just twicePointOne
+    recovered (one ++ orderMinusOne ++ "00") zero `shouldBe` Just ("03" ++ one)
+  it "divides by r" $
+    recovered (two ++ one ++ "02") zero `shouldBe` Just halfPointOrderPlusTwo
+  it "uses r + n as the x coordinate for the ids 2 and 3" $ do
+    recovered (two ++ two ++ "02") zero `shouldBe` Just ("02" ++ orderPlusTwo)
+    recovered (two ++ two ++ "03") zero `shouldBe` Just ("03" ++ orderPlusTwo)
+  it "gives nothing when no point has the x coordinate" $ do
+    recovered (five ++ one ++ "00") zero `shouldBe` Nothing
+    recovered (one ++ one ++ "02") zero `shouldBe` Nothing
+    recovered (fieldMinusOrderMinusOne ++ one ++ "02") zero `shouldBe` Nothing
+  it "gives nothing when r + n reaches the field size" $
+    recovered (fieldMinusOrder ++ one ++ "02") zero `shouldBe` Nothing
+  it "gives nothing when s·R − e·G is the point at infinity" $ do
     -- R = G, s = 1 and e = 1: G - G.
-    recovered ctx (genX ++ one ++ "00") one `shouldBe` Nothing
+    recovered (genX ++ one ++ "00") one `shouldBe` Nothing
     -- With e = 2 instead: (G - 2G) / x = -(x⁻¹)·G.
-    recovered ctx (genX ++ one ++ "00") two `shouldBe` Just genNegatedOverX
+    recovered (genX ++ one ++ "00") two `shouldBe` Just genNegatedOverX
   where
-    recovered ctx sigHex msgHex =
-      bytesToHex . exportPubKey ctx True <$> recover ctx (fromString sigHex) (fromString msgHex)
+    recovered sigHex msgHex =
+      bytesToHex . exportPubKey True <$> recover (fromString sigHex) (fromString msgHex)
 
 -- * Compact encoding
 
-compactSpec :: SpecWith Ctx
+compactSpec :: Spec
 compactSpec = describe "compact encoding" $ do
-  it "imports and exports back the same signature" $ \ctx ->
+  it "imports and exports back the same signature" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let s = signRecMsg ctx k m
-          (compact, i) = exportCompactRecSig ctx s
-       in importCompactRecSig ctx compact i == Just s
-  it "accepts the recovery ids 0 to 3 and rejects 4 and 255" $ \ctx -> do
-    forM_ [0 .. 3] $ \i -> importCompactRecSig ctx (fromString (one ++ one)) i `shouldSatisfy` isJust
-    importCompactRecSig ctx (fromString (one ++ one)) 4 `shouldBe` Nothing
-    importCompactRecSig ctx (fromString (one ++ one)) 255 `shouldBe` Nothing
-  it "accepts components of 1 and n - 1 and rejects 0 and n" $ \ctx -> do
-    importCompactRecSig ctx (fromString (one ++ one)) 0 `shouldSatisfy` isJust
-    importCompactRecSig ctx (fromString (orderMinusOne ++ orderMinusOne)) 0 `shouldSatisfy` isJust
-    importCompactRecSig ctx (fromString (order ++ one)) 0 `shouldBe` Nothing
-    importCompactRecSig ctx (fromString (one ++ order)) 0 `shouldBe` Nothing
-    importCompactRecSig ctx (fromString (zero ++ one)) 0 `shouldBe` Nothing
-    importCompactRecSig ctx (fromString (one ++ zero)) 0 `shouldBe` Nothing
-  it "imports a high-S signature" $ \ctx ->
-    importCompactRecSig ctx (fromString (satoshiR ++ satoshiHighS)) 0 `shouldSatisfy` isJust
-  it "converts to the signature without the id" $ \ctx -> do
-    bytesToHex (exportSig ctx (convertRecSig ctx (fromString (coreR ++ coreS ++ "01")))) `shouldBe` coreDer
-    convertRecSig ctx (fromString (coreR ++ coreS ++ "00"))
-      `shouldBe` convertRecSig ctx (fromString (coreR ++ coreS ++ "01"))
-  it "converts to a signature that verifies" $ \ctx ->
+      let s = signRecMsg k m
+          (compact, i) = exportCompactRecSig s
+       in importCompactRecSig compact i == Just s
+  it "accepts the recovery ids 0 to 3 and rejects 4 and 255" $ do
+    forM_ [0 .. 3] $ \i -> importCompactRecSig (fromString (one ++ one)) i `shouldSatisfy` isJust
+    importCompactRecSig (fromString (one ++ one)) 4 `shouldBe` Nothing
+    importCompactRecSig (fromString (one ++ one)) 255 `shouldBe` Nothing
+  it "accepts components of 1 and n - 1 and rejects 0 and n" $ do
+    importCompactRecSig (fromString (one ++ one)) 0 `shouldSatisfy` isJust
+    importCompactRecSig (fromString (orderMinusOne ++ orderMinusOne)) 0 `shouldSatisfy` isJust
+    importCompactRecSig (fromString (order ++ one)) 0 `shouldBe` Nothing
+    importCompactRecSig (fromString (one ++ order)) 0 `shouldBe` Nothing
+    importCompactRecSig (fromString (zero ++ one)) 0 `shouldBe` Nothing
+    importCompactRecSig (fromString (one ++ zero)) 0 `shouldBe` Nothing
+  it "imports a high-S signature" $
+    importCompactRecSig (fromString (satoshiR ++ satoshiHighS)) 0 `shouldSatisfy` isJust
+  it "converts to the signature without the id" $ do
+    bytesToHex (exportSig (convertRecSig (fromString (coreR ++ coreS ++ "01")))) `shouldBe` coreDer
+    convertRecSig (fromString (coreR ++ coreS ++ "00"))
+      `shouldBe` convertRecSig (fromString (coreR ++ coreS ++ "01"))
+  it "converts to a signature that verifies" $
     property $ \(m :: Msg, k :: SecKey) ->
-      verifySig ctx (derivePubKey ctx k) (convertRecSig ctx (signRecMsg ctx k m)) m
+      verifySig (derivePubKey k) (convertRecSig (signRecMsg k m)) m
 
 -- * Signature values
 
-valueSpec :: SpecWith Ctx
+valueSpec :: Spec
 valueSpec = describe "signature values" $ do
-  it "rebuild from their internal bytes" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> let s = signRecMsg ctx k m in recSig s.get == Just s
-  it "reject internal bytes that are not a signature" $ \_ -> do
+  it "rebuild from their internal bytes" $
+    property $ \(m :: Msg, k :: SecKey) -> let s = signRecMsg k m in recSig s.get == Just s
+  it "reject internal bytes that are not a signature" $ do
     recSig (BS.replicate 65 0) `shouldBe` Nothing
     recSig (BS.replicate 65 0xff) `shouldBe` Nothing
     recSig (BS.replicate 64 1) `shouldBe` Nothing
     recSig (BS.replicate 66 1) `shouldBe` Nothing
-  it "reject an internal recovery id above 3" $ \ctx -> do
+  it "reject an internal recovery id above 3" $ do
     -- libsecp256k1 keeps the id in the last byte of the representation.
-    let bytes = (signRecMsg ctx keyOne satoshiMsg).get
+    let bytes = (signRecMsg keyOne satoshiMsg).get
     recSig (BS.init bytes `BS.snoc` 4) `shouldBe` Nothing
-  it "show r, s and the recovery id in hex" $ \ctx ->
-    show (signRecMsg ctx coreKey coreMsg) `shouldBe` quoted (coreR ++ coreS ++ "01")
-  it "read that encoding" $ \ctx -> do
-    read (quoted (coreR ++ coreS ++ "01")) `shouldBe` signRecMsg ctx coreKey coreMsg
-    (fromString (coreR ++ coreS ++ "01") :: RecSig) `shouldBe` signRecMsg ctx coreKey coreMsg
-  it "show and read" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> showRead (signRecMsg ctx k m)
-  it "do not read an invalid signature" $ \_ -> do
+  it "show r, s and the recovery id in hex" $
+    show (signRecMsg coreKey coreMsg) `shouldBe` quoted (coreR ++ coreS ++ "01")
+  it "read that encoding" $ do
+    read (quoted (coreR ++ coreS ++ "01")) `shouldBe` signRecMsg coreKey coreMsg
+    (fromString (coreR ++ coreS ++ "01") :: RecSig) `shouldBe` signRecMsg coreKey coreMsg
+  it "show and read" $
+    property $ \(m :: Msg, k :: SecKey) -> showRead (signRecMsg k m)
+  it "do not read an invalid signature" $ do
     (readMaybe (quoted (coreR ++ coreS)) :: Maybe RecSig) `shouldBe` Nothing
     (readMaybe (quoted (coreR ++ coreS ++ "04")) :: Maybe RecSig) `shouldBe` Nothing
     (readMaybe (quoted (zero ++ coreS ++ "01")) :: Maybe RecSig) `shouldBe` Nothing
@@ -294,34 +294,34 @@ valueSpec = describe "signature values" $ do
 
 -- * Values built with the raw constructors of the Internal modules
 
-rawValueSpec :: SpecWith Ctx
+rawValueSpec :: Spec
 rawValueSpec = describe "raw values from the Internal modules" $ do
-  it "a signature of 65 zero bytes recovers nothing, instead of aborting the process" $ \ctx ->
-    recover ctx (RecSig (BS.replicate 65 0)) satoshiMsg `shouldBe` Nothing
-  it "a zero secret key throws instead of signing" $ \ctx ->
-    evaluate (signRecMsg ctx (SecKey (BS.replicate 32 0)) satoshiMsg) `shouldThrow` anyErrorCall
-  it "values of the wrong length throw before reaching the library" $ \ctx -> do
-    evaluate (signRecMsg ctx (SecKey "a") satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (signRecMsg ctx keyOne (Msg "a")) `shouldThrow` anyErrorCall
-    evaluate (recover ctx (RecSig "a") satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (recover ctx (signRecMsg ctx keyOne satoshiMsg) (Msg "a")) `shouldThrow` anyErrorCall
-    evaluate (convertRecSig ctx (RecSig "a")) `shouldThrow` anyErrorCall
-    evaluate (exportCompactRecSig ctx (RecSig "a")) `shouldThrow` anyErrorCall
-    evaluate (importCompactRecSig ctx (CompactSig "a") 0) `shouldThrow` anyErrorCall
+  it "a signature of 65 zero bytes recovers nothing, instead of aborting the process" $
+    recover (RecSig (BS.replicate 65 0)) satoshiMsg `shouldBe` Nothing
+  it "a zero secret key throws instead of signing" $
+    evaluate (signRecMsg (SecKey (BS.replicate 32 0)) satoshiMsg) `shouldThrow` anyErrorCall
+  it "values of the wrong length throw before reaching the library" $ do
+    evaluate (signRecMsg (SecKey "a") satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (signRecMsg keyOne (Msg "a")) `shouldThrow` anyErrorCall
+    evaluate (recover (RecSig "a") satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (recover (signRecMsg keyOne satoshiMsg) (Msg "a")) `shouldThrow` anyErrorCall
+    evaluate (convertRecSig (RecSig "a")) `shouldThrow` anyErrorCall
+    evaluate (exportCompactRecSig (RecSig "a")) `shouldThrow` anyErrorCall
+    evaluate (importCompactRecSig (CompactSig "a") 0) `shouldThrow` anyErrorCall
     evaluate (length (show (RecSig "a"))) `shouldThrow` anyErrorCall
 
 -- * Derived instances
 
-instanceSpec :: SpecWith Ctx
+instanceSpec :: Spec
 instanceSpec = describe "derived instances" $ do
-  it "equal values hash equally, whichever way they were built" $ \ctx ->
+  it "equal values hash equally, whichever way they were built" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let s = signRecMsg ctx k m
-          (compact, i) = exportCompactRecSig ctx s
-       in hash s == hash (fromJust (importCompactRecSig ctx compact i))
+      let s = signRecMsg k m
+          (compact, i) = exportCompactRecSig s
+       in hash s == hash (fromJust (importCompactRecSig compact i))
             && hash s == hash (fromJust (recSig s.get))
-  it "can be fully evaluated" $ \ctx ->
-    (signRecMsg ctx keyOne satoshiMsg `deepseq` ()) `shouldBe` ()
+  it "can be fully evaluated" $
+    (signRecMsg keyOne satoshiMsg `deepseq` ()) `shouldBe` ()
 
 #else
 

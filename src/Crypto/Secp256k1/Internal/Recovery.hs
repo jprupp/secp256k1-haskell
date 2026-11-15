@@ -16,6 +16,9 @@
 -- does not check the content. A raw 'RecSig' with invalid content makes
 -- functions return 'Nothing', a value that does not verify, or throw, never
 -- abort or read outside a buffer.
+--
+-- As in "Crypto.Secp256k1.Internal.Base", every function uses the global
+-- context of the package and none takes one.
 module Crypto.Secp256k1.Internal.Recovery where
 
 import Control.DeepSeq (NFData)
@@ -28,7 +31,7 @@ import Crypto.Secp256k1.Internal.Base
     Sig (..),
     hasNonZeroComponents,
   )
-import Crypto.Secp256k1.Internal.Context (Ctx (..), validationContext)
+import Crypto.Secp256k1.Internal.Context (globalContext)
 import Crypto.Secp256k1.Internal.ForeignTypes (isSuccess)
 import Crypto.Secp256k1.Internal.RecoveryOps
   ( ecdsaRecover,
@@ -51,7 +54,7 @@ import Data.Hashable (Hashable)
 import Data.Maybe (fromMaybe)
 import Data.String (IsString (..))
 import Data.Word (Word8)
-import Foreign (alloca, allocaBytes, nullFunPtr, nullPtr, peek, withForeignPtr)
+import Foreign (alloca, allocaBytes, nullFunPtr, nullPtr, peek)
 import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Read
@@ -96,14 +99,14 @@ instance Show RecSig where
 recSigToEncoding :: RecSig -> ByteString
 recSigToEncoding rs = compact.get `BS.snoc` rec_id
   where
-    (compact, rec_id) = exportCompactRecSig validationContext rs
+    (compact, rec_id) = exportCompactRecSig rs
 
--- | Parse the 65-byte encoding of 'recSigToEncoding' without a
--- caller-provided context. Used by the 'Read' and 'IsString' instances.
+-- | Parse the 65-byte encoding of 'recSigToEncoding'. Used by the 'Read' and
+-- 'IsString' instances.
 recSigFromEncoding :: ByteString -> Maybe RecSig
 recSigFromEncoding bs = do
   guard (BS.length bs == 65)
-  importCompactRecSig validationContext (CompactSig (BS.take 64 bs)) (BS.last bs)
+  importCompactRecSig (CompactSig (BS.take 64 bs)) (BS.last bs)
 
 -- | Import a recoverable signature from the bytes of its internal
 -- representation, as found in the @get@ field of a 'RecSig' on the same
@@ -127,43 +130,40 @@ isCanonicalRecSig :: ByteString -> Bool
 isCanonicalRecSig bs =
   BS.length bs == 65
     && unsafePerformIO
-      ( withForeignPtr fctx $ \ctx ->
-          unsafeUseByteString bs $ \(rec_sig_ptr, _) ->
-            allocaBytes 64 $ \compact_ptr ->
-              alloca $ \rec_id_ptr -> do
-                ret <-
-                  ecdsaRecoverableSignatureSerializeCompact
-                    ctx
-                    compact_ptr
-                    rec_id_ptr
-                    rec_sig_ptr
-                if not (isSuccess ret)
-                  then return False
-                  else do
-                    rec_id <- peek rec_id_ptr
-                    compact <- packByteString (compact_ptr, 64)
-                    parsed <- withOutput 65 $ \out ->
-                      isSuccess
-                        <$> ecdsaRecoverableSignatureParseCompact ctx out compact_ptr rec_id
-                    return (parsed == Just bs && hasNonZeroComponents compact)
+      ( unsafeUseByteString bs $ \(rec_sig_ptr, _) ->
+          allocaBytes 64 $ \compact_ptr ->
+            alloca $ \rec_id_ptr -> do
+              ret <-
+                ecdsaRecoverableSignatureSerializeCompact
+                  globalContext
+                  compact_ptr
+                  rec_id_ptr
+                  rec_sig_ptr
+              if not (isSuccess ret)
+                then return False
+                else do
+                  rec_id <- peek rec_id_ptr
+                  compact <- packByteString (compact_ptr, 64)
+                  parsed <- withOutput 65 $ \out ->
+                    isSuccess
+                      <$> ecdsaRecoverableSignatureParseCompact globalContext out compact_ptr rec_id
+                  return (parsed == Just bs && hasNonZeroComponents compact)
       )
-  where
-    Ctx fctx = validationContext
 
 -- | Sign a message hash and keep the recovery id. The nonce comes from RFC
 -- 6979, so the same key and hash always give the same signature, and r and s
 -- are those of 'Crypto.Secp256k1.signMsg', in lower-S form. There is no low-R
 -- grinding. Bitcoin Core does not grind when it signs a message with
 -- @SignCompact@ either, so the signatures are the same as Bitcoin Core's.
-signRecMsg :: Ctx -> SecKey -> Msg -> RecSig
-signRecMsg (Ctx fctx) (SecKey sec_key) (Msg m) =
-  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+signRecMsg :: SecKey -> Msg -> RecSig
+signRecMsg (SecKey sec_key) (Msg m) =
+  unsafePerformIO $
     useFixedByteString "SecKey" 32 sec_key $ \(sec_key_ptr, _) ->
       useFixedByteString "Msg" 32 m $ \(msg_ptr, _) -> do
         -- A null nonce function selects the RFC 6979 default.
         out <- withOutput 65 $ \rec_sig_ptr ->
           isSuccess
-            <$> ecdsaSignRecoverable ctx rec_sig_ptr msg_ptr sec_key_ptr nullFunPtr nullPtr
+            <$> ecdsaSignRecoverable globalContext rec_sig_ptr msg_ptr sec_key_ptr nullFunPtr nullPtr
         maybe (error "could not sign message") (return . RecSig) out
 
 -- | The public key that made a signature of a message hash. 'Nothing' when no
@@ -176,51 +176,51 @@ signRecMsg (Ctx fctx) (SecKey sec_key) (Msg m) =
 -- same key. Bitcoin Core accepts such message signatures too. Where the rule
 -- matters, check 'Crypto.Secp256k1.isLowS' on 'convertRecSig'. The hash is
 -- reduced modulo the curve order, as 'Crypto.Secp256k1.verifySig' does.
-recover :: Ctx -> RecSig -> Msg -> Maybe PubKey
-recover (Ctx fctx) (RecSig rec_sig) (Msg m) =
-  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+recover :: RecSig -> Msg -> Maybe PubKey
+recover (RecSig rec_sig) (Msg m) =
+  unsafePerformIO $
     useFixedByteString "RecSig" 65 rec_sig $ \(rec_sig_ptr, _) ->
       useFixedByteString "Msg" 32 m $ \(msg_ptr, _) ->
         (fmap . fmap) PubKey . withOutput 64 $ \pub_key_ptr ->
-          isSuccess <$> ecdsaRecover ctx pub_key_ptr rec_sig_ptr msg_ptr
+          isSuccess <$> ecdsaRecover globalContext pub_key_ptr rec_sig_ptr msg_ptr
 
 -- | The signature without its recovery id. For a signature from
 -- 'signRecMsg', this is the signature that 'Crypto.Secp256k1.signMsg' gives.
-convertRecSig :: Ctx -> RecSig -> Sig
-convertRecSig (Ctx fctx) (RecSig rec_sig) =
-  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+convertRecSig :: RecSig -> Sig
+convertRecSig (RecSig rec_sig) =
+  unsafePerformIO $
     useFixedByteString "RecSig" 65 rec_sig $ \(rec_sig_ptr, _) -> do
       out <- withOutput 64 $ \sig_ptr ->
-        isSuccess <$> ecdsaRecoverableSignatureConvert ctx sig_ptr rec_sig_ptr
+        isSuccess <$> ecdsaRecoverableSignatureConvert globalContext sig_ptr rec_sig_ptr
       maybe (error "could not convert recoverable signature") (return . Sig) out
 
 -- | Parse a signature from the compact encoding and its recovery id.
 -- 'Nothing' unless both components are in the range 1 to n−1 and the id is 0
 -- to 3. The signature may be in high-S form.
-importCompactRecSig :: Ctx -> CompactSig -> Word8 -> Maybe RecSig
-importCompactRecSig (Ctx fctx) (CompactSig compact) rec_id = do
+importCompactRecSig :: CompactSig -> Word8 -> Maybe RecSig
+importCompactRecSig (CompactSig compact) rec_id = do
   guard (rec_id <= 3)
   -- libsecp256k1 accepts a zero component here and only refuses it in
   -- 'recover'. It is rejected here so that 'convertRecSig' always gives a
   -- valid 'Sig', as 'Crypto.Secp256k1.importCompactSig' does.
   guard (hasNonZeroComponents compact)
-  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+  unsafePerformIO $
     useFixedByteString "CompactSig" 64 compact $ \(compact_ptr, _) ->
       (fmap . fmap) RecSig . withOutput 65 $ \out ->
         isSuccess
-          <$> ecdsaRecoverableSignatureParseCompact ctx out compact_ptr (fromIntegral rec_id)
+          <$> ecdsaRecoverableSignatureParseCompact globalContext out compact_ptr (fromIntegral rec_id)
 
 -- | Serialize a signature to the compact encoding and its recovery id. The
 -- header byte of a Bitcoin signed message is 27 plus the id, plus 4 for a
 -- compressed key, which the caller adds.
-exportCompactRecSig :: Ctx -> RecSig -> (CompactSig, Word8)
-exportCompactRecSig (Ctx fctx) (RecSig rec_sig) =
-  unsafePerformIO $ withForeignPtr fctx $ \ctx ->
+exportCompactRecSig :: RecSig -> (CompactSig, Word8)
+exportCompactRecSig (RecSig rec_sig) =
+  unsafePerformIO $
     useFixedByteString "RecSig" 65 rec_sig $ \(rec_sig_ptr, _) ->
       alloca $ \rec_id_ptr -> do
         out <- withOutput 64 $ \compact_ptr ->
           isSuccess
-            <$> ecdsaRecoverableSignatureSerializeCompact ctx compact_ptr rec_id_ptr rec_sig_ptr
+            <$> ecdsaRecoverableSignatureSerializeCompact globalContext compact_ptr rec_id_ptr rec_sig_ptr
         case out of
           Nothing -> error "could not serialize recoverable signature"
           Just compact -> do

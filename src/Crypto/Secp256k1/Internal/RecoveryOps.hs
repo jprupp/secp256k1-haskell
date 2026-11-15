@@ -2,11 +2,15 @@
 -- library only has when it was built with @--enable-module-recovery@. See
 -- "Crypto.Secp256k1.Recovery". This module is only built when the @recovery@
 -- flag of the package is on.
+--
+-- Like "Crypto.Secp256k1.Internal.BaseOps", it is hidden, because every
+-- binding takes a context pointer and the package exposes nothing that makes,
+-- takes or names a context.
 module Crypto.Secp256k1.Internal.RecoveryOps where
 
+import Crypto.Secp256k1.Internal.ContextOps (LCtx)
 import Crypto.Secp256k1.Internal.ForeignTypes
   ( Compact64,
-    LCtx,
     Msg32,
     NonceFun,
     PubKey64,

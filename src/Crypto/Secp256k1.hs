@@ -20,14 +20,18 @@
 --   signature, and invalid input is refused at the boundary where it arrives.
 --
 -- * __Never abort.__ The C library calls @abort()@ on an illegal argument by
---   default, which kills the whole Haskell process and cannot be caught. Every
---   context this package creates replaces that callback, so a bad argument
---   becomes 'Nothing', 'False' or an exception instead.
+--   default, which kills the whole Haskell process and cannot be caught. The
+--   context of this package replaces that callback, so a bad argument becomes
+--   'Nothing', 'False' or an exception instead.
+--
+-- * __No context to carry.__ libsecp256k1 wants a context object in every
+--   call. The package keeps one for the whole process and passes it itself,
+--   so no function here takes one. See Contexts below.
 --
 -- * __Pure where the mathematics is pure.__ Signing, verifying and tweaking are
 --   deterministic functions of their inputs, so they are pure functions here.
---   Only the operations that need fresh randomness, such as 'signSchnorrIO'
---   and 'randomizeContext', run in 'IO'.
+--   Only the operations that need fresh randomness, such as 'signSchnorrIO',
+--   run in 'IO'.
 --
 -- * __Standard encodings at the edges.__ Values print and parse in the encodings
 --   other software understands (SEC1, DER, compact, BIP-340), never in the
@@ -85,9 +89,40 @@
 --
 -- == Contexts
 --
--- Every operation takes a 'Ctx'. Create one with 'createContext' and share it
--- between threads. Only 'randomizeContext' modifies a context and needs
--- exclusive access.
+-- There is no context in this API. libsecp256k1 needs a context object for
+-- every call, which holds its error callbacks and the random blinding values
+-- that protect secret key operations against side-channel leakage. The
+-- package keeps a single global one and uses it for every function.
+--
+-- * __When it is created.__ The first time a function that needs it is
+--   evaluated, and once per process, even when several threads get there
+--   together. Programs that never use the package never pay for it. The first
+--   call is slower than the following ones by the time it takes to create the
+--   context and read 32 bytes from the operating system's secure random
+--   source. If that fails, the call raises an error.
+--
+-- * __Randomized once.__ The context is seeded with those 32 bytes before it
+--   is used, as libsecp256k1 recommends. The blinding changes how the
+--   computation runs, not its results.
+--
+-- * __Never re-randomized.__ After its creation the context is only read,
+--   which is what makes it safe to use from any number of threads without a
+--   lock, and what lets signing stay a pure function. Randomizing again
+--   writes to the context, and doing that while another thread signs is a
+--   data race in the C library. So the package has no function for it, and
+--   the context is in a hidden module where no other code can reach it
+--   either.
+--
+-- * __What was given up.__ Before version 3.0.0 the caller created contexts
+--   with @createContext@ and passed one to every function. That allowed
+--   a context per thread or per use, and re-randomizing one with
+--   @randomizeContext@ during a long run. Both are gone. In exchange, the
+--   argument that carried no information is gone from every signature, a
+--   context can no longer be modified under a thread that is using it, and
+--   instances such as 'Show' and 'Read' use the same randomized context as
+--   everything else.
+--
+-- The context is never destroyed. It lives as long as the process.
 --
 -- == Differences from Bitcoin Core
 --
@@ -113,14 +148,7 @@
 -- module @Crypto.Secp256k1.Recovery@. It is built when the @recovery@ flag of
 -- the package is on, which is the default.
 module Crypto.Secp256k1
-  ( -- * Context
-    Ctx,
-    withContext,
-    createContext,
-    randomizeContext,
-    cloneContext,
-
-    -- * Messages
+  ( -- * Messages
     Msg (get),
     msg,
 
@@ -184,4 +212,3 @@ module Crypto.Secp256k1
 where
 
 import Crypto.Secp256k1.Internal.Base
-import Crypto.Secp256k1.Internal.Context

@@ -1,5 +1,5 @@
 name: secp256k1-haskell
-version: 2.1.0
+version: 3.0.0
 synopsis: Bindings for secp256k1
 description: Sign and verify signatures using the secp256k1 library.
 category: Crypto
@@ -34,18 +34,35 @@ library:
     - -Wall
   generated-exposed-modules:
     - Paths_secp256k1_haskell
+  # The modules that hold the global context, or whose bindings make, take or
+  # name a context, are hidden, so that no user of the package can reach a
+  # context. Every other module in src is exposed.
+  other-modules:
+    - Crypto.Secp256k1.Internal.BaseOps
+    - Crypto.Secp256k1.Internal.Context
+    - Crypto.Secp256k1.Internal.ContextOps
   pkg-config-dependencies:
     - libsecp256k1 >= 0.2.0
   when:
     - condition: flag(recovery)
       exposed-modules:
         - Crypto.Secp256k1.Internal.Recovery
-        - Crypto.Secp256k1.Internal.RecoveryOps
         - Crypto.Secp256k1.Recovery
+      other-modules:
+        - Crypto.Secp256k1.Internal.RecoveryOps
 tests:
   spec:
     main: Spec.hs
-    source-dirs: test
+    # The tests compile the sources of the library themselves instead of
+    # depending on it, because they test the raw bindings in its hidden
+    # modules.
+    source-dirs:
+      - test
+      - src
+    c-sources:
+      - cbits/illegal_callback.c
+    pkg-config-dependencies:
+      - libsecp256k1 >= 0.2.0
     ghc-options:
       - -Wall
       - -threaded
@@ -56,10 +73,13 @@ tests:
           hspec-discover:hspec-discover
     dependencies:
       - hspec
-      - secp256k1-haskell
       - monad-par
       - mtl
       - HUnit
     when:
       - condition: flag(recovery)
         cpp-options: -DRECOVERY
+        other-modules:
+          - Crypto.Secp256k1.Internal.Recovery
+          - Crypto.Secp256k1.Internal.RecoveryOps
+          - Crypto.Secp256k1.Recovery

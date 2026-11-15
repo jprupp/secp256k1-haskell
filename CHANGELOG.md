@@ -4,6 +4,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-11-14
+
+The context is now global and no longer part of the API. This breaks every
+program that uses the package, on purpose: see Migrating.
+
+### Removed
+
+- `Ctx`, `createContext`, `withContext`, `cloneContext` and `randomizeContext`
+  are gone from `Crypto.Secp256k1`.
+- The `Ctx` argument is gone from every function of `Crypto.Secp256k1` and
+  `Crypto.Secp256k1.Recovery` that took one: `derivePubKey`, `importPubKey`,
+  `exportPubKey`, `signMsg`, `signMsgLowR`, `verifySig`, `normalizeSig`,
+  `isLowS`, `isLowR`, `importSig`, `exportSig`, `importCompactSig`,
+  `exportCompactSig`, `tweakAddSecKey`, `tweakMulSecKey`, `tweakAddPubKey`,
+  `tweakMulPubKey`, `combinePubKeys`, `tweakNegate`, `signSchnorr`,
+  `signSchnorrWithAux`, `signSchnorrIO`, `verifySchnorr`,
+  `importXOnlyPubKey`, `exportXOnlyPubKey`, `tweakAddXOnlyPubKey`,
+  `tweakAddXOnlySecKey`, `signRecMsg`, `recover`, `convertRecSig`,
+  `importCompactRecSig` and `exportCompactRecSig`. The other arguments keep
+  their order, for example `signMsg :: SecKey -> Msg -> Sig` and
+  `exportPubKey :: Bool -> PubKey -> ByteString`.
+- The package no longer exposes anything that makes, takes or names a
+  context. `Crypto.Secp256k1.Internal.Context`, `Crypto.Secp256k1.Internal.BaseOps`
+  and `Crypto.Secp256k1.Internal.RecoveryOps` are hidden modules now, so the
+  raw foreign imports and the bindings that create, clone, randomize and
+  destroy contexts cannot be imported. `LCtx` and `CtxFlags` are gone from
+  `Crypto.Secp256k1.Internal.ForeignTypes`. `Ctx`, `wrapContext` and
+  `validationContext` no longer exist. There is no replacement: code that
+  called the raw bindings with its own context uses the functions of
+  `Crypto.Secp256k1` and `Crypto.Secp256k1.Recovery`.
+- The functions of
+  `Crypto.Secp256k1.Internal.Base` and `Crypto.Secp256k1.Internal.Recovery`
+  lost their context argument too, including the helpers `signMsgWith`,
+  `signSchnorrInternal`, `withXOnlyPubKey`, `withKeyPair` and
+  `verifyFreshSignature`.
+
+### Changed
+
+- The package creates a single libsecp256k1 context the first time a function
+  needs one, randomizes it once, and uses it for every call in the process.
+  After its creation it is only read, so it is safe to use from any number of
+  threads. It is never randomized again, because that modifies the context
+  and is a data race with any thread that is using it, and it is never
+  destroyed. It is kept in a hidden module, so no code outside the package
+  can reach it.
+- `Show`, `Read` and `IsString`, and `pubKey`, `sig` and `recSig`, use the
+  global context instead of a separate one for validation.
+- The test suite compiles the sources of the library itself instead of
+  depending on the library, so that it can still test the raw bindings in the
+  hidden modules.
+
+### Migrating
+
+- Delete the code that made a context: `createContext`, `withContext` and
+  `cloneContext`, and any `Ctx` you kept in a record, a reader environment or
+  a function argument.
+- Delete the context argument from every call: `signMsg ctx key m` becomes
+  `signMsg key m`.
+- Delete calls to `randomizeContext`. There is no replacement: the context is
+  randomized once, when it is created.
+- What is no longer possible: a context per thread or per use, and
+  re-randomizing during a long run. Results do not depend on either.
+
 ## [2.1.0] - 2026-11-07
 
 ### Changed

@@ -9,7 +9,6 @@ module Crypto.Secp256k1Spec (spec) where
 import Control.DeepSeq (deepseq)
 import Control.Exception (evaluate)
 import Control.Monad.Par qualified as P
-import Data.Bits (xor)
 import Crypto.Secp256k1
 import Crypto.Secp256k1.Fixtures
 import Crypto.Secp256k1.Internal.Base
@@ -22,6 +21,7 @@ import Crypto.Secp256k1.Internal.Base
     Tweak (Tweak),
     signMsgWith,
   )
+import Data.Bits (xor)
 import Data.ByteString qualified as BS
 import Data.Hashable (hash)
 import Data.Maybe (fromJust, isJust, isNothing)
@@ -31,7 +31,7 @@ import Test.QuickCheck
 import Text.Read (readMaybe)
 
 spec :: Spec
-spec = around withContext $ do
+spec = do
   secretKeySpec
   publicKeySpec
   messageSpec
@@ -44,7 +44,6 @@ spec = around withContext $ do
   schnorrSpec
   xOnlySpec
   taprootSpec
-  contextSpec
   rawValueSpec
   instanceSpec
 
@@ -313,41 +312,44 @@ bip341Vectors =
 
 -- * Secret keys
 
-secretKeySpec :: SpecWith Ctx
+secretKeySpec :: Spec
 secretKeySpec = describe "secret keys" $ do
-  it "accepts 1 and n - 1" $ \_ -> do
+  it "accepts 1 and n - 1" $ do
     secKey (hexToBytes one) `shouldSatisfy` isJust
     secKey (hexToBytes orderMinusOne) `shouldSatisfy` isJust
-  it "rejects 0, n, n + 1 and 2^256 - 1" $ \_ -> do
+  it "rejects 0, n, n + 1 and 2^256 - 1" $ do
     secKey (hexToBytes zero) `shouldBe` Nothing
     secKey (hexToBytes order) `shouldBe` Nothing
     secKey (hexToBytes orderPlusOne) `shouldBe` Nothing
     secKey (hexToBytes allOnes) `shouldBe` Nothing
-  it "rejects 31 and 33 bytes" $ \_ -> do
+  it "rejects 31 and 33 bytes" $ do
     secKey (BS.replicate 31 1) `shouldBe` Nothing
     secKey (BS.replicate 33 1) `shouldBe` Nothing
-  it "keeps the bytes it was given" $ \_ ->
-    property $ \(k :: SecKey) -> secKey k.get == Just k
-  it "derives the generator from key 1" $ \ctx -> do
-    bytesToHex (exportPubKey ctx True (derivePubKey ctx keyOne))
+  it "keeps the bytes it was given" $
+    property $
+      \(k :: SecKey) -> secKey k.get == Just k
+  it "derives the generator from key 1" $ do
+    bytesToHex (exportPubKey True (derivePubKey keyOne))
       `shouldBe` genCompressed
-    bytesToHex (exportPubKey ctx False (derivePubKey ctx keyOne))
+    bytesToHex (exportPubKey False (derivePubKey keyOne))
       `shouldBe` genUncompressed
-  it "derives the negated generator from key n - 1" $ \ctx ->
+  it "derives the negated generator from key n - 1" $
     -- -G has the same x as G and an odd y, so the prefix is 03.
-    bytesToHex (exportPubKey ctx True (derivePubKey ctx (fromString orderMinusOne)))
+    bytesToHex (exportPubKey True (derivePubKey (fromString orderMinusOne)))
       `shouldBe` "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-  it "derives the historical public key" $ \ctx ->
-    bytesToHex (exportPubKey ctx False (derivePubKey ctx histKey)) `shouldBe` histPub
-  it "shows a placeholder instead of the key" $ \_ ->
-    property $ \(k :: SecKey) -> show k == "SecKey <redacted>"
-  it "parenthesizes the placeholder inside a larger value" $ \_ ->
+  it "derives the historical public key" $
+    bytesToHex (exportPubKey False (derivePubKey histKey)) `shouldBe` histPub
+  it "shows a placeholder instead of the key" $
+    property $
+      \(k :: SecKey) -> show k == "SecKey <redacted>"
+  it "parenthesizes the placeholder inside a larger value" $
     show (Just keyOne) `shouldBe` "Just (SecKey <redacted>)"
-  it "reads the key from hex" $ \_ ->
+  it "reads the key from hex" $
     read (quoted one) `shouldBe` keyOne
-  it "reads from a string" $ \_ ->
-    property $ \(k :: SecKey) -> fromString (bytesToHex k.get) == k
-  it "does not read an invalid key" $ \_ -> do
+  it "reads from a string" $
+    property $
+      \(k :: SecKey) -> fromString (bytesToHex k.get) == k
+  it "does not read an invalid key" $ do
     (readMaybe (quoted zero) :: Maybe SecKey) `shouldBe` Nothing
     (readMaybe (quoted order) :: Maybe SecKey) `shouldBe` Nothing
     (readMaybe (quoted (drop 1 one)) :: Maybe SecKey) `shouldBe` Nothing
@@ -356,83 +358,85 @@ secretKeySpec = describe "secret keys" $ do
 
 -- * Public keys
 
-publicKeySpec :: SpecWith Ctx
+publicKeySpec :: Spec
 publicKeySpec = describe "public keys" $ do
-  it "imports the compressed, uncompressed and hybrid encodings of G" $ \ctx -> do
-    let g = derivePubKey ctx keyOne
-    importPubKey ctx (hexToBytes genCompressed) `shouldBe` Just g
-    importPubKey ctx (hexToBytes genUncompressed) `shouldBe` Just g
-    importPubKey ctx (hexToBytes genHybrid) `shouldBe` Just g
-  it "rejects malformed encodings" $ \ctx -> do
-    importPubKey ctx "" `shouldBe` Nothing
+  it "imports the compressed, uncompressed and hybrid encodings of G" $ do
+    let g = derivePubKey keyOne
+    importPubKey (hexToBytes genCompressed) `shouldBe` Just g
+    importPubKey (hexToBytes genUncompressed) `shouldBe` Just g
+    importPubKey (hexToBytes genHybrid) `shouldBe` Just g
+  it "rejects malformed encodings" $ do
+    importPubKey "" `shouldBe` Nothing
     -- prefix 05 does not exist
-    importPubKey ctx (hexToBytes ("05" ++ drop 2 genCompressed)) `shouldBe` Nothing
+    importPubKey (hexToBytes ("05" ++ drop 2 genCompressed)) `shouldBe` Nothing
     -- x only, no prefix
-    importPubKey ctx (hexToBytes (drop 2 genCompressed)) `shouldBe` Nothing
+    importPubKey (hexToBytes (drop 2 genCompressed)) `shouldBe` Nothing
     -- x and y without a prefix
-    importPubKey ctx (hexToBytes (drop 2 genUncompressed)) `shouldBe` Nothing
+    importPubKey (hexToBytes (drop 2 genUncompressed)) `shouldBe` Nothing
     -- uncompressed prefix on a compressed length
-    importPubKey ctx (hexToBytes ("04" ++ drop 2 genCompressed)) `shouldBe` Nothing
+    importPubKey (hexToBytes ("04" ++ drop 2 genCompressed)) `shouldBe` Nothing
     -- compressed prefix on an uncompressed length
-    importPubKey ctx (hexToBytes ("02" ++ drop 2 genUncompressed)) `shouldBe` Nothing
-  it "rejects points that are not on the curve" $ \ctx -> do
+    importPubKey (hexToBytes ("02" ++ drop 2 genUncompressed)) `shouldBe` Nothing
+  it "rejects points that are not on the curve" $ do
     -- x = 5 has no point on secp256k1 (x^3 + 7 is not a square mod p).
-    importPubKey ctx (hexToBytes ("02" ++ take 62 zero ++ "05")) `shouldBe` Nothing
+    importPubKey (hexToBytes ("02" ++ take 62 zero ++ "05")) `shouldBe` Nothing
     -- (1, 1) is not on the curve: 1 /= 1 + 7.
-    importPubKey ctx (hexToBytes ("04" ++ take 62 zero ++ "01" ++ take 62 zero ++ "01"))
+    importPubKey (hexToBytes ("04" ++ take 62 zero ++ "01" ++ take 62 zero ++ "01"))
       `shouldBe` Nothing
-  it "exports and imports back the same key" $ \ctx ->
+  it "exports and imports back the same key" $
     property $ \(k :: SecKey, compress :: Bool) ->
-      let p = derivePubKey ctx k
-       in importPubKey ctx (exportPubKey ctx compress p) == Just p
-  it "exports and imports in parallel" $ \ctx ->
+      let p = derivePubKey k
+       in importPubKey (exportPubKey compress p) == Just p
+  it "exports and imports in parallel" $
     property $ \(ks :: [(SecKey, Bool)]) -> P.runPar $ do
-      results <- mapM (P.spawnP . roundTrip ctx) ks
+      results <- mapM (P.spawnP . roundTrip) ks
       and <$> mapM P.get results
-  it "rebuilds a key from its internal bytes" $ \ctx ->
-    property $ \(k :: SecKey) -> let p = derivePubKey ctx k in pubKey p.get == Just p
-  it "rejects internal bytes that are not a point" $ \_ -> do
+  it "rebuilds a key from its internal bytes" $
+    property $
+      \(k :: SecKey) -> let p = derivePubKey k in pubKey p.get == Just p
+  it "rejects internal bytes that are not a point" $ do
     pubKey (BS.replicate 64 0) `shouldBe` Nothing
     pubKey (BS.replicate 64 1) `shouldBe` Nothing
     pubKey (BS.replicate 64 0xff) `shouldBe` Nothing
     pubKey (BS.pack [1 .. 64]) `shouldBe` Nothing
     pubKey (BS.replicate 63 1) `shouldBe` Nothing
-  it "shows the compressed encoding" $ \ctx ->
-    show (derivePubKey ctx keyOne) `shouldBe` quoted genCompressed
-  it "reads any encoding" $ \ctx -> do
-    let g = derivePubKey ctx keyOne
+  it "shows the compressed encoding" $
+    show (derivePubKey keyOne) `shouldBe` quoted genCompressed
+  it "reads any encoding" $ do
+    let g = derivePubKey keyOne
     read (quoted genCompressed) `shouldBe` g
     read (quoted genUncompressed) `shouldBe` g
     read (quoted genHybrid) `shouldBe` g
     (fromString genUncompressed :: PubKey) `shouldBe` g
-  it "shows and reads" $ \ctx ->
-    property $ \(k :: SecKey) -> showRead (derivePubKey ctx k)
-  it "does not read an invalid key" $ \_ -> do
+  it "shows and reads" $
+    property $
+      \(k :: SecKey) -> showRead (derivePubKey k)
+  it "does not read an invalid key" $ do
     (readMaybe (quoted (zero ++ zero)) :: Maybe PubKey) `shouldBe` Nothing
     (readMaybe (quoted ("02" ++ take 62 zero ++ "05")) :: Maybe PubKey) `shouldBe` Nothing
     (readMaybe (quoted (drop 2 genCompressed)) :: Maybe PubKey) `shouldBe` Nothing
     evaluate (fromString (drop 2 genCompressed) :: PubKey) `shouldThrow` anyErrorCall
   where
-    roundTrip ctx (k, compress) =
-      let p = derivePubKey ctx k
-       in importPubKey ctx (exportPubKey ctx compress p) == Just p
+    roundTrip (k, compress) =
+      let p = derivePubKey k
+       in importPubKey (exportPubKey compress p) == Just p
 
 -- * Messages
 
-messageSpec :: SpecWith Ctx
+messageSpec :: Spec
 messageSpec = describe "messages" $ do
-  it "accepts 32 bytes and rejects other lengths" $ \_ -> do
+  it "accepts 32 bytes and rejects other lengths" $ do
     msg (BS.replicate 32 7) `shouldSatisfy` isJust
     msg (BS.replicate 31 7) `shouldBe` Nothing
     msg (BS.replicate 33 7) `shouldBe` Nothing
     msg "" `shouldBe` Nothing
-  it "shows and reads" $ \_ ->
+  it "shows and reads" $
     property (showRead :: Msg -> Bool)
-  it "reads from a string, upper or lower case" $ \_ ->
+  it "reads from a string, upper or lower case" $
     property $ \(m :: Msg) ->
       fromString (bytesToHex m.get) == m
         && fromString (map toUpperHex (bytesToHex m.get)) == m
-  it "does not read an invalid message" $ \_ -> do
+  it "does not read an invalid message" $ do
     (readMaybe (quoted (drop 1 one)) :: Maybe Msg) `shouldBe` Nothing
     -- A non-ASCII character is not a hex digit even when its low byte is one
     -- (U+FF41, fullwidth 'a').
@@ -443,185 +447,189 @@ messageSpec = describe "messages" $ do
 
 -- * Signing
 
-signingSpec :: SpecWith Ctx
+signingSpec :: Spec
 signingSpec = describe "signing" $ do
-  it "produces the RFC 6979 vector for key 1 and sha256 'Satoshi Nakamoto'" $ \ctx -> do
-    bytesToHex (exportSig ctx (signMsg ctx keyOne satoshiMsg)) `shouldBe` satoshiDer
-    bytesToHex (exportCompactSig ctx (signMsg ctx keyOne satoshiMsg)).get
+  it "produces the RFC 6979 vector for key 1 and sha256 'Satoshi Nakamoto'" $ do
+    bytesToHex (exportSig (signMsg keyOne satoshiMsg)) `shouldBe` satoshiDer
+    bytesToHex (exportCompactSig (signMsg keyOne satoshiMsg)).get
       `shouldBe` satoshiR ++ satoshiS
-  it "produces Bitcoin Core's deterministic signature" $ \ctx -> do
-    bytesToHex (exportSig ctx (signMsg ctx coreKey coreMsg)) `shouldBe` coreDer
-    bytesToHex (exportSig ctx (signMsgLowR ctx coreKey coreMsg)) `shouldBe` coreDer
-  it "is deterministic" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> signMsg ctx k m == signMsg ctx k m
-  it "verifies with the matching public key" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> signsAndVerifies ctx (m, k)
-  it "verifies in parallel" $ \ctx ->
+  it "produces Bitcoin Core's deterministic signature" $ do
+    bytesToHex (exportSig (signMsg coreKey coreMsg)) `shouldBe` coreDer
+    bytesToHex (exportSig (signMsgLowR coreKey coreMsg)) `shouldBe` coreDer
+  it "is deterministic" $
+    property $
+      \(m :: Msg, k :: SecKey) -> signMsg k m == signMsg k m
+  it "verifies with the matching public key" $
+    property $
+      \(m :: Msg, k :: SecKey) -> signsAndVerifies (m, k)
+  it "verifies in parallel" $
     property $ \(xs :: [(Msg, SecKey)]) -> P.runPar $ do
-      results <- mapM (P.spawnP . signsAndVerifies ctx) xs
+      results <- mapM (P.spawnP . signsAndVerifies) xs
       and <$> mapM P.get results
-  it "produces lower-S signatures" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> isLowS ctx (signMsg ctx k m)
+  it "produces lower-S signatures" $
+    property $
+      \(m :: Msg, k :: SecKey) -> isLowS (signMsg k m)
   describe "with low r" $ do
-    it "leaves a signature alone when r is already low" $ \ctx -> do
-      bytesToHex (exportSig ctx (signMsg ctx keyOne lowRMsg)) `shouldBe` lowRDer
-      signMsgLowR ctx keyOne lowRMsg `shouldBe` signMsg ctx keyOne lowRMsg
-    it "grinds a high r down the way Bitcoin Core does" $ \ctx -> do
-      bytesToHex (exportSig ctx (signMsg ctx keyOne highRMsg)) `shouldBe` highRDer
-      bytesToHex (exportSig ctx (signMsgLowR ctx keyOne highRMsg)) `shouldBe` groundDer
-    it "always gives low r, lower s, at most 70 DER bytes, and verifies" $ \ctx ->
+    it "leaves a signature alone when r is already low" $ do
+      bytesToHex (exportSig (signMsg keyOne lowRMsg)) `shouldBe` lowRDer
+      signMsgLowR keyOne lowRMsg `shouldBe` signMsg keyOne lowRMsg
+    it "grinds a high r down the way Bitcoin Core does" $ do
+      bytesToHex (exportSig (signMsg keyOne highRMsg)) `shouldBe` highRDer
+      bytesToHex (exportSig (signMsgLowR keyOne highRMsg)) `shouldBe` groundDer
+    it "always gives low r, lower s, at most 70 DER bytes, and verifies" $
       property $ \(m :: Msg, k :: SecKey) ->
-        let s = signMsgLowR ctx k m
-         in isLowR ctx s
-              && isLowS ctx s
-              && BS.length (exportSig ctx s) <= 70
-              && verifySig ctx (derivePubKey ctx k) s m
-    it "equals plain signing whenever that already has low r" $ \ctx ->
+        let s = signMsgLowR k m
+         in isLowR s
+              && isLowS s
+              && BS.length (exportSig s) <= 70
+              && verifySig (derivePubKey k) s m
+    it "equals plain signing whenever that already has low r" $
       property $ \(m :: Msg, k :: SecKey) ->
-        let s = signMsg ctx k m
-         in isLowR ctx s ==> signMsgLowR ctx k m == s
+        let s = signMsg k m
+         in isLowR s ==> signMsgLowR k m == s
   where
-    signsAndVerifies ctx (m, k) =
-      verifySig ctx (derivePubKey ctx k) (signMsg ctx k m) m
+    signsAndVerifies (m, k) =
+      verifySig (derivePubKey k) (signMsg k m) m
 
 -- * Verification
 
-verificationSpec :: SpecWith Ctx
+verificationSpec :: Spec
 verificationSpec = describe "verification" $ do
-  it "accepts the RFC 6979 vector from its DER encoding" $ \ctx ->
-    verifySig ctx (fromString genCompressed) (fromJust (importSig ctx (hexToBytes satoshiDer))) satoshiMsg
+  it "accepts the RFC 6979 vector from its DER encoding" $
+    verifySig (fromString genCompressed) (fromJust (importSig (hexToBytes satoshiDer))) satoshiMsg
       `shouldBe` True
-  it "accepts the historical vector" $ \ctx ->
+  it "accepts the historical vector" $
     verifySig
-      ctx
       (fromString histPub)
-      ( fromJust . importSig ctx . hexToBytes $
+      ( fromJust . importSig . hexToBytes $
           "3045022100f502bfa07af43e7ef265618b0d929a7619ee01d6150e37eb6eaaf2c8bd37fb22\
           \02206f0415ab0e9a977afd78b2c26ef39b3952096d319fd4b101c768ad6c132e3045"
       )
       "f5cbe7d88182a4b8e400f96b06128921864a18187d114c8ae8541b566c8ace00"
       `shouldBe` True
-  it "rejects a signature from another key" $ \ctx ->
+  it "rejects a signature from another key" $
     property $ \(m :: Msg, k :: SecKey, k' :: SecKey) ->
-      k /= k' ==> not (verifySig ctx (derivePubKey ctx k') (signMsg ctx k m) m)
-  it "rejects a signature over another message" $ \ctx ->
+      k /= k' ==> not (verifySig (derivePubKey k') (signMsg k m) m)
+  it "rejects a signature over another message" $
     property $ \(m :: Msg, m' :: Msg, k :: SecKey) ->
-      m /= m' ==> not (verifySig ctx (derivePubKey ctx k) (signMsg ctx k m) m')
-  it "rejects a signature with one bit flipped" $ \ctx ->
+      m /= m' ==> not (verifySig (derivePubKey k) (signMsg k m) m')
+  it "rejects a signature with one bit flipped" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let compact = (exportCompactSig ctx (signMsg ctx k m)).get
+      let compact = (exportCompactSig (signMsg k m)).get
           -- Flipping the lowest bit of a lower-S s keeps it below n.
           flipped = BS.init compact `BS.snoc` (BS.last compact `xor` 1)
-       in case importCompactSig ctx (fromJust (compactSig flipped)) of
+       in case importCompactSig (fromJust (compactSig flipped)) of
             Nothing -> False
-            Just s -> not (verifySig ctx (derivePubKey ctx k) s m)
+            Just s -> not (verifySig (derivePubKey k) s m)
   describe "lower-S form" $ do
-    it "rejects the high-S form of a valid signature" $ \ctx -> do
+    it "rejects the high-S form of a valid signature" $ do
       let high = fromString (satoshiR ++ satoshiHighS) :: Sig
-      isLowS ctx high `shouldBe` False
-      verifySig ctx (fromString genCompressed) high satoshiMsg `shouldBe` False
-    it "normalizes the high-S form to the signature that was made" $ \ctx -> do
+      isLowS high `shouldBe` False
+      verifySig (fromString genCompressed) high satoshiMsg `shouldBe` False
+    it "normalizes the high-S form to the signature that was made" $ do
       let high = fromString (satoshiR ++ satoshiHighS) :: Sig
-          low = normalizeSig ctx high
-      low `shouldBe` signMsg ctx keyOne satoshiMsg
-      isLowS ctx low `shouldBe` True
-      verifySig ctx (fromString genCompressed) low satoshiMsg `shouldBe` True
-    it "leaves a lower-S signature unchanged" $ \ctx ->
+          low = normalizeSig high
+      low `shouldBe` signMsg keyOne satoshiMsg
+      isLowS low `shouldBe` True
+      verifySig (fromString genCompressed) low satoshiMsg `shouldBe` True
+    it "leaves a lower-S signature unchanged" $
       property $ \(m :: Msg, k :: SecKey) ->
-        let s = signMsg ctx k m in normalizeSig ctx s == s
-    it "is idempotent" $ \ctx -> do
+        let s = signMsg k m in normalizeSig s == s
+    it "is idempotent" $ do
       let high = fromString (satoshiR ++ satoshiHighS) :: Sig
-      normalizeSig ctx (normalizeSig ctx high) `shouldBe` normalizeSig ctx high
+      normalizeSig (normalizeSig high) `shouldBe` normalizeSig high
 
 -- * DER
 
-derSpec :: SpecWith Ctx
+derSpec :: Spec
 derSpec = describe "DER signatures" $ do
-  it "exports the RFC 6979 vector and imports it back" $ \ctx -> do
-    let s = signMsg ctx keyOne satoshiMsg
-    bytesToHex (exportSig ctx s) `shouldBe` satoshiDer
-    importSig ctx (hexToBytes satoshiDer) `shouldBe` Just s
-  it "exports and imports back the same signature" $ \ctx ->
+  it "exports the RFC 6979 vector and imports it back" $ do
+    let s = signMsg keyOne satoshiMsg
+    bytesToHex (exportSig s) `shouldBe` satoshiDer
+    importSig (hexToBytes satoshiDer) `shouldBe` Just s
+  it "exports and imports back the same signature" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let s = signMsg ctx k m in importSig ctx (exportSig ctx s) == Just s
-  it "exports and imports in parallel" $ \ctx ->
+      let s = signMsg k m in importSig (exportSig s) == Just s
+  it "exports and imports in parallel" $
     property $ \(xs :: [(Msg, SecKey)]) -> P.runPar $ do
-      results <- mapM (P.spawnP . roundTrip ctx) xs
+      results <- mapM (P.spawnP . roundTrip) xs
       and <$> mapM P.get results
-  it "exports 70 bytes for low r and 71 bytes for high r" $ \ctx -> do
-    BS.length (exportSig ctx (signMsg ctx keyOne lowRMsg)) `shouldBe` 70
-    BS.length (exportSig ctx (signMsg ctx keyOne highRMsg)) `shouldBe` 71
-  it "imports a high-S signature" $ \ctx -> do
+  it "exports 70 bytes for low r and 71 bytes for high r" $ do
+    BS.length (exportSig (signMsg keyOne lowRMsg)) `shouldBe` 70
+    BS.length (exportSig (signMsg keyOne highRMsg)) `shouldBe` 71
+  it "imports a high-S signature" $ do
     let high = fromString (satoshiR ++ satoshiHighS) :: Sig
-    importSig ctx (exportSig ctx high) `shouldBe` Just high
-  it "rejects an empty input" $ \ctx ->
-    importSig ctx "" `shouldBe` Nothing
-  it "rejects a component equal to n or zero" $ \ctx -> do
+    importSig (exportSig high) `shouldBe` Just high
+  it "rejects an empty input" $
+    importSig "" `shouldBe` Nothing
+  it "rejects a component equal to n or zero" $ do
     -- r = n (33 bytes with a zero pad), s = r of the vector.
-    importSig ctx (hexToBytes ("3046022100" ++ order ++ "022100" ++ satoshiR)) `shouldBe` Nothing
+    importSig (hexToBytes ("3046022100" ++ order ++ "022100" ++ satoshiR)) `shouldBe` Nothing
     -- r = 0, s = r of the vector. 3 + 35 = 38 = 0x26 bytes.
-    importSig ctx (hexToBytes ("3026020100022100" ++ satoshiR)) `shouldBe` Nothing
+    importSig (hexToBytes ("3026020100022100" ++ satoshiR)) `shouldBe` Nothing
     -- r of the vector, s = 0.
-    importSig ctx (hexToBytes ("3026022100" ++ satoshiR ++ "020100")) `shouldBe` Nothing
-  it "rejects encodings that are not strict DER" $ \ctx -> do
+    importSig (hexToBytes ("3026022100" ++ satoshiR ++ "020100")) `shouldBe` Nothing
+  it "rejects encodings that are not strict DER" $ do
     -- Long-form length for a value below 128.
-    importSig ctx (hexToBytes ("308145" ++ drop 4 satoshiDer)) `shouldBe` Nothing
+    importSig (hexToBytes ("308145" ++ drop 4 satoshiDer)) `shouldBe` Nothing
     -- A byte after the sequence.
-    importSig ctx (hexToBytes (satoshiDer ++ "00")) `shouldBe` Nothing
+    importSig (hexToBytes (satoshiDer ++ "00")) `shouldBe` Nothing
     -- A byte missing at the end.
-    importSig ctx (hexToBytes (take (length satoshiDer - 2) satoshiDer)) `shouldBe` Nothing
+    importSig (hexToBytes (take (length satoshiDer - 2) satoshiDer)) `shouldBe` Nothing
     -- Wrong sequence tag.
-    importSig ctx (hexToBytes ("31" ++ drop 2 satoshiDer)) `shouldBe` Nothing
+    importSig (hexToBytes ("31" ++ drop 2 satoshiDer)) `shouldBe` Nothing
     -- Negative r: the zero pad is removed although the first byte is 0x93.
-    importSig ctx (hexToBytes ("30440220" ++ satoshiR ++ "0220" ++ satoshiS)) `shouldBe` Nothing
+    importSig (hexToBytes ("30440220" ++ satoshiR ++ "0220" ++ satoshiS)) `shouldBe` Nothing
     -- Two zero pad bytes on r.
-    importSig ctx (hexToBytes ("3046022200" ++ "00" ++ satoshiR ++ "0220" ++ satoshiS)) `shouldBe` Nothing
+    importSig (hexToBytes ("3046022200" ++ "00" ++ satoshiR ++ "0220" ++ satoshiS)) `shouldBe` Nothing
   where
-    roundTrip ctx (m, k) = let s = signMsg ctx k m in importSig ctx (exportSig ctx s) == Just s
+    roundTrip (m, k) = let s = signMsg k m in importSig (exportSig s) == Just s
 
 -- * Compact signatures
 
-compactSpec :: SpecWith Ctx
+compactSpec :: Spec
 compactSpec = describe "compact signatures" $ do
-  it "exports the RFC 6979 vector and imports it back" $ \ctx -> do
-    let s = signMsg ctx keyOne satoshiMsg
-    bytesToHex (exportCompactSig ctx s).get `shouldBe` satoshiR ++ satoshiS
-    importCompactSig ctx (fromString (satoshiR ++ satoshiS)) `shouldBe` Just s
-  it "exports and imports back the same signature" $ \ctx ->
+  it "exports the RFC 6979 vector and imports it back" $ do
+    let s = signMsg keyOne satoshiMsg
+    bytesToHex (exportCompactSig s).get `shouldBe` satoshiR ++ satoshiS
+    importCompactSig (fromString (satoshiR ++ satoshiS)) `shouldBe` Just s
+  it "exports and imports back the same signature" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let s = signMsg ctx k m in importCompactSig ctx (exportCompactSig ctx s) == Just s
-  it "accepts components of 1 and n - 1 and rejects 0 and n" $ \ctx -> do
-    importCompactSig ctx (fromString (one ++ one)) `shouldSatisfy` isJust
-    importCompactSig ctx (fromString (orderMinusOne ++ orderMinusOne)) `shouldSatisfy` isJust
-    importCompactSig ctx (fromString (order ++ one)) `shouldBe` Nothing
-    importCompactSig ctx (fromString (one ++ order)) `shouldBe` Nothing
-    importCompactSig ctx (fromString (zero ++ one)) `shouldBe` Nothing
-    importCompactSig ctx (fromString (one ++ zero)) `shouldBe` Nothing
-  it "only accepts 64 bytes as a compact signature" $ \_ -> do
+      let s = signMsg k m in importCompactSig (exportCompactSig s) == Just s
+  it "accepts components of 1 and n - 1 and rejects 0 and n" $ do
+    importCompactSig (fromString (one ++ one)) `shouldSatisfy` isJust
+    importCompactSig (fromString (orderMinusOne ++ orderMinusOne)) `shouldSatisfy` isJust
+    importCompactSig (fromString (order ++ one)) `shouldBe` Nothing
+    importCompactSig (fromString (one ++ order)) `shouldBe` Nothing
+    importCompactSig (fromString (zero ++ one)) `shouldBe` Nothing
+    importCompactSig (fromString (one ++ zero)) `shouldBe` Nothing
+  it "only accepts 64 bytes as a compact signature" $ do
     compactSig (BS.replicate 64 1) `shouldSatisfy` isJust
     compactSig (BS.replicate 63 1) `shouldBe` Nothing
     compactSig (BS.replicate 65 1) `shouldBe` Nothing
-  it "shows and reads a compact signature" $ \_ -> do
+  it "shows and reads a compact signature" $ do
     show (fromString (satoshiR ++ satoshiS) :: CompactSig) `shouldBe` quoted (satoshiR ++ satoshiS)
     (readMaybe (quoted (satoshiR ++ satoshiS)) :: Maybe CompactSig)
       `shouldBe` Just (fromString (satoshiR ++ satoshiS))
     (readMaybe (quoted satoshiR) :: Maybe CompactSig) `shouldBe` Nothing
     evaluate (fromString satoshiR :: CompactSig) `shouldThrow` anyErrorCall
   describe "signature values" $ do
-    it "rebuild from their internal bytes" $ \ctx ->
-      property $ \(m :: Msg, k :: SecKey) -> let s = signMsg ctx k m in sig s.get == Just s
-    it "reject internal bytes that are not a signature" $ \_ -> do
+    it "rebuild from their internal bytes" $
+      property $
+        \(m :: Msg, k :: SecKey) -> let s = signMsg k m in sig s.get == Just s
+    it "reject internal bytes that are not a signature" $ do
       sig (BS.replicate 64 0) `shouldBe` Nothing
       sig (BS.replicate 64 0xff) `shouldBe` Nothing
       sig (BS.replicate 63 1) `shouldBe` Nothing
-    it "show the compact encoding" $ \ctx ->
-      show (signMsg ctx keyOne satoshiMsg) `shouldBe` quoted (satoshiR ++ satoshiS)
-    it "read the compact encoding" $ \ctx -> do
-      read (quoted (satoshiR ++ satoshiS)) `shouldBe` signMsg ctx keyOne satoshiMsg
-      (fromString (satoshiR ++ satoshiS) :: Sig) `shouldBe` signMsg ctx keyOne satoshiMsg
-    it "show and read" $ \ctx ->
-      property $ \(m :: Msg, k :: SecKey) -> showRead (signMsg ctx k m)
-    it "do not read an invalid signature" $ \_ -> do
+    it "show the compact encoding" $
+      show (signMsg keyOne satoshiMsg) `shouldBe` quoted (satoshiR ++ satoshiS)
+    it "read the compact encoding" $ do
+      read (quoted (satoshiR ++ satoshiS)) `shouldBe` signMsg keyOne satoshiMsg
+      (fromString (satoshiR ++ satoshiS) :: Sig) `shouldBe` signMsg keyOne satoshiMsg
+    it "show and read" $
+      property $
+        \(m :: Msg, k :: SecKey) -> showRead (signMsg k m)
+    it "do not read an invalid signature" $ do
       (readMaybe (quoted (zero ++ one)) :: Maybe Sig) `shouldBe` Nothing
       (readMaybe (quoted (order ++ one)) :: Maybe Sig) `shouldBe` Nothing
       (readMaybe (quoted satoshiDer) :: Maybe Sig) `shouldBe` Nothing
@@ -629,87 +637,89 @@ compactSpec = describe "compact signatures" $ do
 
 -- * Tweaks
 
-tweakSpec :: SpecWith Ctx
+tweakSpec :: Spec
 tweakSpec = describe "tweaks" $ do
-  it "accepts 0 and n - 1 and rejects n and 2^256 - 1" $ \_ -> do
+  it "accepts 0 and n - 1 and rejects n and 2^256 - 1" $ do
     tweak (hexToBytes zero) `shouldSatisfy` isJust
     tweak (hexToBytes orderMinusOne) `shouldSatisfy` isJust
     tweak (hexToBytes order) `shouldBe` Nothing
     tweak (hexToBytes allOnes) `shouldBe` Nothing
     tweak (BS.replicate 31 0) `shouldBe` Nothing
-  it "shows and reads" $ \_ ->
+  it "shows and reads" $
     property (showRead :: Tweak -> Bool)
-  it "does not read a tweak of n" $ \_ -> do
+  it "does not read a tweak of n" $ do
     (readMaybe (quoted order) :: Maybe Tweak) `shouldBe` Nothing
     evaluate (fromString order :: Tweak) `shouldThrow` anyErrorCall
-  it "reads from a string" $ \_ ->
-    property $ \(t :: Tweak) -> fromString (bytesToHex t.get) == t
-  it "adds to a secret key" $ \ctx ->
+  it "reads from a string" $
+    property $
+      \(t :: Tweak) -> fromString (bytesToHex t.get) == t
+  it "adds to a secret key" $
     -- (key + tweak) mod n
-    tweakAddSecKey ctx histKey histTweak
+    tweakAddSecKey histKey histTweak
       `shouldBe` Just "ec1e3ce1cefa18a671d51125e2b249688d934b0e28f5d1665384d9b02f929059"
-  it "multiplies a secret key" $ \ctx ->
+  it "multiplies a secret key" $
     -- (key * tweak) mod n
-    tweakMulSecKey ctx histKey histTweak
+    tweakMulSecKey histKey histTweak
       `shouldBe` Just "a96f5962493acb179f60a86a9785fc7a30e0c39b64c09d24fe064d9aef15e4c0"
-  it "adds to a public key" $ \ctx ->
+  it "adds to a public key" $
     -- P + tweak * G
-    fmap (bytesToHex . exportPubKey ctx False) (tweakAddPubKey ctx (fromString histPub) histTweak)
+    fmap (bytesToHex . exportPubKey False) (tweakAddPubKey (fromString histPub) histTweak)
       `shouldBe` Just
         "04441c3982b97576646e0df0c96736063df6b42f2ee566d13b9f6424302d1379e5\
         \18fdc87a14c5435bff7a5db4552042cb4120c6b86a4bbd3d0643f3c14ad01368"
-  it "multiplies a public key" $ \ctx ->
+  it "multiplies a public key" $
     -- tweak * P
-    fmap (bytesToHex . exportPubKey ctx False) (tweakMulPubKey ctx (fromString histPub) histTweak)
+    fmap (bytesToHex . exportPubKey False) (tweakMulPubKey (fromString histPub) histTweak)
       `shouldBe` Just
         "04f379dc99cdf5c83e433defa267fbb3377d61d6b779c06a0e4ce29ae3ff5353b1\
         \2ae49c9d07e7368f2ba5a446c203255ce912322991a2d6a9d5d5761c61ed1845"
-  it "tweaks the public key like the secret key" $ \ctx ->
+  it "tweaks the public key like the secret key" $
     property $ \(k :: SecKey, t :: Tweak) ->
-      fmap (derivePubKey ctx) (tweakAddSecKey ctx k t) == tweakAddPubKey ctx (derivePubKey ctx k) t
-        && fmap (derivePubKey ctx) (tweakMulSecKey ctx k t) == tweakMulPubKey ctx (derivePubKey ctx k) t
-  it "adding zero changes nothing" $ \ctx ->
+      fmap (derivePubKey) (tweakAddSecKey k t) == tweakAddPubKey (derivePubKey k) t
+        && fmap (derivePubKey) (tweakMulSecKey k t) == tweakMulPubKey (derivePubKey k) t
+  it "adding zero changes nothing" $
     property $ \(k :: SecKey) ->
-      tweakAddSecKey ctx k (fromString zero) == Just k
-        && tweakAddPubKey ctx (derivePubKey ctx k) (fromString zero) == Just (derivePubKey ctx k)
-  it "multiplying by zero fails" $ \ctx -> do
-    tweakMulSecKey ctx keyOne (fromString zero) `shouldBe` Nothing
-    tweakMulPubKey ctx (derivePubKey ctx keyOne) (fromString zero) `shouldBe` Nothing
-  it "adding the negation of the key fails" $ \ctx -> do
+      tweakAddSecKey k (fromString zero) == Just k
+        && tweakAddPubKey (derivePubKey k) (fromString zero) == Just (derivePubKey k)
+  it "multiplying by zero fails" $ do
+    tweakMulSecKey keyOne (fromString zero) `shouldBe` Nothing
+    tweakMulPubKey (derivePubKey keyOne) (fromString zero) `shouldBe` Nothing
+  it "adding the negation of the key fails" $ do
     -- 1 + (n - 1) = 0 mod n
-    tweakAddSecKey ctx keyOne (fromString orderMinusOne) `shouldBe` Nothing
-    tweakAddPubKey ctx (derivePubKey ctx keyOne) (fromString orderMinusOne) `shouldBe` Nothing
-  it "negates modulo n" $ \ctx -> do
-    tweakNegate ctx (fromString one) `shouldBe` Just (fromString orderMinusOne)
-    tweakNegate ctx (fromString zero) `shouldBe` Just (fromString zero)
+    tweakAddSecKey keyOne (fromString orderMinusOne) `shouldBe` Nothing
+    tweakAddPubKey (derivePubKey keyOne) (fromString orderMinusOne) `shouldBe` Nothing
+  it "negates modulo n" $ do
+    tweakNegate (fromString one) `shouldBe` Just (fromString orderMinusOne)
+    tweakNegate (fromString zero) `shouldBe` Just (fromString zero)
     -- n - histTweak
-    tweakNegate ctx histTweak
+    tweakNegate histTweak
       `shouldBe` Just "0a3418277e7d5b471bff0694f9ed76dd3464c4ce323753b0d77e433663ab7341"
-  it "negating twice gives the tweak back" $ \ctx ->
-    property $ \(t :: Tweak) -> (tweakNegate ctx t >>= tweakNegate ctx) == Just t
-  it "adding a tweak and then its negation gives the key back" $ \ctx ->
+  it "negating twice gives the tweak back" $
+    property $
+      \(t :: Tweak) -> (tweakNegate t >>= tweakNegate) == Just t
+  it "adding a tweak and then its negation gives the key back" $
     property $ \(k :: SecKey, t :: Tweak) ->
-      let minus = fromJust (tweakNegate ctx t)
-       in (tweakAddSecKey ctx k t >>= \k' -> tweakAddSecKey ctx k' minus) == Just k
-  it "leaves its inputs unchanged" $ \ctx ->
+      let minus = fromJust (tweakNegate t)
+       in (tweakAddSecKey k t >>= \k' -> tweakAddSecKey k' minus) == Just k
+  it "leaves its inputs unchanged" $
     property $ \(k :: SecKey, t :: Tweak) ->
       let kBytes = BS.copy k.get
-          p = derivePubKey ctx k
+          p = derivePubKey k
           pBytes = BS.copy p.get
           tBytes = BS.copy t.get
-       in tweakAddSecKey ctx k t `seq`
-            tweakMulPubKey ctx p t `seq`
-              tweakNegate ctx t `seq`
+       in tweakAddSecKey k t `seq`
+            tweakMulPubKey p t `seq`
+              tweakNegate t `seq`
                 (k.get == kBytes && p.get == pBytes && t.get == tBytes)
 
 -- * Combining public keys
 
-combineSpec :: SpecWith Ctx
+combineSpec :: Spec
 combineSpec = describe "combining public keys" $ do
-  it "adds three historical keys" $ \ctx ->
-    fmap (bytesToHex . exportPubKey ctx False)
+  it "adds three historical keys" $
+    fmap
+      (bytesToHex . exportPubKey False)
       ( combinePubKeys
-          ctx
           [ fromString histPub,
             "0487d82042d93447008dfe2af762068a1e53ff394a5bf8f68a045fa642b99ea5d1\
             \53f577dd2dba6c7ae4cfd7b6622409d7edd2d76dd13a8092cd3af97b77bd2c77",
@@ -720,70 +730,70 @@ combineSpec = describe "combining public keys" $ do
       `shouldBe` Just
         "043d9a7ec70011efc23c33a7e62d2ea73cca87797e3b659d93bea6aa871aebde56\
         \c3bc6134ca82e324b0ab9c0e601a6d2933afe7fb5d9f3aae900f5c5dc6e362c8"
-  it "adds G to itself" $ \ctx ->
+  it "adds G to itself" $
     -- 2 * G
-    fmap (bytesToHex . exportPubKey ctx True) (combinePubKeys ctx [fromString genCompressed, fromString genCompressed])
+    fmap (bytesToHex . exportPubKey True) (combinePubKeys [fromString genCompressed, fromString genCompressed])
       `shouldBe` Just "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
-  it "adds like the secret keys add" $ \ctx ->
+  it "adds like the secret keys add" $
     property $ \(k1 :: SecKey, k2 :: SecKey) ->
-      combinePubKeys ctx [derivePubKey ctx k1, derivePubKey ctx k2]
-        == fmap (derivePubKey ctx) (tweakAddSecKey ctx k1 (fromString (bytesToHex k2.get)))
-  it "returns a single key unchanged" $ \ctx ->
-    property $ \(k :: SecKey) -> combinePubKeys ctx [derivePubKey ctx k] == Just (derivePubKey ctx k)
-  it "fails for no keys" $ \ctx ->
-    combinePubKeys ctx [] `shouldBe` Nothing
-  it "fails when the sum is the point at infinity" $ \ctx ->
+      combinePubKeys [derivePubKey k1, derivePubKey k2]
+        == fmap (derivePubKey) (tweakAddSecKey k1 (fromString (bytesToHex k2.get)))
+  it "returns a single key unchanged" $
+    property $
+      \(k :: SecKey) -> combinePubKeys [derivePubKey k] == Just (derivePubKey k)
+  it "fails for no keys" $
+    combinePubKeys [] `shouldBe` Nothing
+  it "fails when the sum is the point at infinity" $
     property $ \(k :: SecKey) ->
-      let p = derivePubKey ctx k
-          minusP = fromJust (tweakMulPubKey ctx p (fromString orderMinusOne))
-       in isNothing (combinePubKeys ctx [p, minusP])
-
--- * Contexts
+      let p = derivePubKey k
+          minusP = fromJust (tweakMulPubKey p (fromString orderMinusOne))
+       in isNothing (combinePubKeys [p, minusP])
 
 -- * Schnorr signatures
 
-schnorrSpec :: SpecWith Ctx
+schnorrSpec :: Spec
 schnorrSpec = describe "Schnorr signatures" $ do
   describe "BIP-340 vector" $ mapM_ bip340VectorSpec bip340Vectors
-  it "signs vector 0 without auxiliary randomness as with 32 zero bytes" $ \ctx ->
-    signSchnorr ctx bip340Key0 (fromString zero) `shouldBe` fromString bip340Sig0
-  it "signs without randomness as with 32 zero bytes" $ \ctx ->
+  it "signs vector 0 without auxiliary randomness as with 32 zero bytes" $
+    signSchnorr bip340Key0 (fromString zero) `shouldBe` fromString bip340Sig0
+  it "signs without randomness as with 32 zero bytes" $
     property $ \(m :: Msg, k :: SecKey) ->
-      signSchnorrWithAux ctx k m (BS.replicate 32 0) == Just (signSchnorr ctx k m)
-  it "verifies with the matching public key" $ \ctx ->
+      signSchnorrWithAux k m (BS.replicate 32 0) == Just (signSchnorr k m)
+  it "verifies with the matching public key" $
     property $ \(m :: Msg, k :: SecKey) ->
-      verifySchnorr ctx (derivePubKey ctx k) (signSchnorr ctx k m) m
-  it "verifies with the negation of the public key" $ \ctx ->
+      verifySchnorr (derivePubKey k) (signSchnorr k m) m
+  it "verifies with the negation of the public key" $
     property $ \(m :: Msg, k :: SecKey) ->
-      verifySchnorr ctx (negatePubKey ctx (derivePubKey ctx k)) (signSchnorr ctx k m) m
-  it "verifies a signature made with fresh randomness" $ \ctx ->
+      verifySchnorr (negatePubKey (derivePubKey k)) (signSchnorr k m) m
+  it "verifies a signature made with fresh randomness" $
     property $ \(m :: Msg, k :: SecKey) -> ioProperty $ do
-      s <- signSchnorrIO ctx k m
-      return (verifySchnorr ctx (derivePubKey ctx k) s m)
-  it "changes with the auxiliary randomness" $ \ctx ->
+      s <- signSchnorrIO k m
+      return (verifySchnorr (derivePubKey k) s m)
+  it "changes with the auxiliary randomness" $
     property $ \(m :: Msg, k :: SecKey) ->
-      signSchnorrWithAux ctx k m (BS.replicate 32 1) /= signSchnorrWithAux ctx k m (BS.replicate 32 2)
-  it "rejects auxiliary randomness that is not 32 bytes" $ \ctx -> do
-    signSchnorrWithAux ctx keyOne satoshiMsg (BS.replicate 31 0) `shouldBe` Nothing
-    signSchnorrWithAux ctx keyOne satoshiMsg (BS.replicate 33 0) `shouldBe` Nothing
-  it "rejects a signature from another key" $ \ctx ->
+      signSchnorrWithAux k m (BS.replicate 32 1) /= signSchnorrWithAux k m (BS.replicate 32 2)
+  it "rejects auxiliary randomness that is not 32 bytes" $ do
+    signSchnorrWithAux keyOne satoshiMsg (BS.replicate 31 0) `shouldBe` Nothing
+    signSchnorrWithAux keyOne satoshiMsg (BS.replicate 33 0) `shouldBe` Nothing
+  it "rejects a signature from another key" $
     property $ \(m :: Msg, k :: SecKey, k' :: SecKey) ->
-      k /= k' ==> not (verifySchnorr ctx (derivePubKey ctx k') (signSchnorr ctx k m) m)
-  it "rejects a signature over another message" $ \ctx ->
+      k /= k' ==> not (verifySchnorr (derivePubKey k') (signSchnorr k m) m)
+  it "rejects a signature over another message" $
     property $ \(m :: Msg, m' :: Msg, k :: SecKey) ->
-      m /= m' ==> not (verifySchnorr ctx (derivePubKey ctx k) (signSchnorr ctx k m) m')
-  it "only accepts 64 bytes as a signature" $ \_ -> do
+      m /= m' ==> not (verifySchnorr (derivePubKey k) (signSchnorr k m) m')
+  it "only accepts 64 bytes as a signature" $ do
     schnorrSig (BS.replicate 64 0) `shouldSatisfy` isJust
     schnorrSig (BS.replicate 63 0) `shouldBe` Nothing
     schnorrSig (BS.replicate 65 0) `shouldBe` Nothing
-  it "shows the signature in hex" $ \_ ->
+  it "shows the signature in hex" $
     show (fromString bip340Sig0 :: SchnorrSig) `shouldBe` quoted bip340Sig0
-  it "shows and reads" $ \ctx ->
-    property $ \(m :: Msg, k :: SecKey) -> showRead (signSchnorr ctx k m)
-  it "reads from a string" $ \ctx ->
+  it "shows and reads" $
+    property $
+      \(m :: Msg, k :: SecKey) -> showRead (signSchnorr k m)
+  it "reads from a string" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let s = signSchnorr ctx k m in fromString (bytesToHex s.get) == s
-  it "does not read a signature of the wrong length" $ \_ -> do
+      let s = signSchnorr k m in fromString (bytesToHex s.get) == s
+  it "does not read a signature of the wrong length" $ do
     (readMaybe (quoted (replicate 126 '0')) :: Maybe SchnorrSig) `shouldBe` Nothing
     evaluate (fromString (replicate 126 '0') :: SchnorrSig) `shouldThrow` anyErrorCall
 
@@ -791,207 +801,193 @@ schnorrSpec = describe "Schnorr signatures" $ do
 -- with the given auxiliary randomness gives the signature. For every vector:
 -- verification gives the expected result, where a public key that does not
 -- import counts as a failed verification.
-bip340VectorSpec :: BIP340Vector -> SpecWith Ctx
-bip340VectorSpec v = it (show v.index ++ " " ++ v.comment) $ \ctx -> do
+bip340VectorSpec :: BIP340Vector -> Spec
+bip340VectorSpec v = it (show v.index ++ " " ++ v.comment) $ do
   let m = fromString v.message :: Msg
       s = fromString v.signature :: SchnorrSig
   case (v.secretKey, v.auxRand) of
     (Just key, Just aux) -> do
       let k = fromString key :: SecKey
-      bytesToHex (exportXOnlyPubKey ctx (derivePubKey ctx k)) `shouldBe` v.publicKey
-      signSchnorrWithAux ctx k m (hexToBytes aux) `shouldBe` Just s
+      bytesToHex (exportXOnlyPubKey (derivePubKey k)) `shouldBe` v.publicKey
+      signSchnorrWithAux k m (hexToBytes aux) `shouldBe` Just s
     _ -> return ()
-  maybe False (\p -> verifySchnorr ctx p s m) (importXOnlyPubKey ctx (hexToBytes v.publicKey))
+  maybe False (\p -> verifySchnorr p s m) (importXOnlyPubKey (hexToBytes v.publicKey))
     `shouldBe` v.result
 
 -- * X-only public keys
 
-xOnlySpec :: SpecWith Ctx
+xOnlySpec :: Spec
 xOnlySpec = describe "x-only public keys" $ do
-  it "exports the x coordinate of G" $ \ctx ->
+  it "exports the x coordinate of G" $
     -- the compressed encoding of G without its 02 prefix
-    bytesToHex (exportXOnlyPubKey ctx (derivePubKey ctx keyOne)) `shouldBe` drop 2 genCompressed
-  it "exports the public key of BIP-340 vector 0" $ \ctx ->
-    bytesToHex (exportXOnlyPubKey ctx (derivePubKey ctx bip340Key0)) `shouldBe` bip340Pub0
-  it "exports the x coordinate of any key" $ \ctx ->
+    bytesToHex (exportXOnlyPubKey (derivePubKey keyOne)) `shouldBe` drop 2 genCompressed
+  it "exports the public key of BIP-340 vector 0" $
+    bytesToHex (exportXOnlyPubKey (derivePubKey bip340Key0)) `shouldBe` bip340Pub0
+  it "exports the x coordinate of any key" $
     property $ \(k :: SecKey) ->
-      let p = derivePubKey ctx k
-       in exportXOnlyPubKey ctx p == BS.drop 1 (exportPubKey ctx True p)
-  it "exports a key and its negation the same way" $ \ctx ->
+      let p = derivePubKey k
+       in exportXOnlyPubKey p == BS.drop 1 (exportPubKey True p)
+  it "exports a key and its negation the same way" $
     property $ \(k :: SecKey) ->
-      let p = derivePubKey ctx k
-       in exportXOnlyPubKey ctx p == exportXOnlyPubKey ctx (negatePubKey ctx p)
-  it "imports G from its x coordinate" $ \ctx ->
-    fmap (bytesToHex . exportPubKey ctx True) (importXOnlyPubKey ctx (hexToBytes (drop 2 genCompressed)))
+      let p = derivePubKey k
+       in exportXOnlyPubKey p == exportXOnlyPubKey (negatePubKey p)
+  it "imports G from its x coordinate" $
+    fmap (bytesToHex . exportPubKey True) (importXOnlyPubKey (hexToBytes (drop 2 genCompressed)))
       `shouldBe` Just genCompressed
-  it "imports the point with an even y coordinate" $ \ctx ->
+  it "imports the point with an even y coordinate" $
     property $ \(k :: SecKey) ->
-      let x = exportXOnlyPubKey ctx (derivePubKey ctx k)
-       in fmap (exportPubKey ctx True) (importXOnlyPubKey ctx x) == Just (BS.cons 0x02 x)
-  it "rejects an x coordinate that is not on the curve" $ \ctx -> do
-    importXOnlyPubKey ctx (hexToBytes fieldSize) `shouldBe` Nothing
+      let x = exportXOnlyPubKey (derivePubKey k)
+       in fmap (exportPubKey True) (importXOnlyPubKey x) == Just (BS.cons 0x02 x)
+  it "rejects an x coordinate that is not on the curve" $ do
+    importXOnlyPubKey (hexToBytes fieldSize) `shouldBe` Nothing
     -- BIP-340 vector 5
-    importXOnlyPubKey ctx (hexToBytes "eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34")
+    importXOnlyPubKey (hexToBytes "eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34")
       `shouldBe` Nothing
-  it "rejects 31 and 33 bytes" $ \ctx -> do
-    importXOnlyPubKey ctx (BS.replicate 31 1) `shouldBe` Nothing
-    importXOnlyPubKey ctx (BS.replicate 33 1) `shouldBe` Nothing
+  it "rejects 31 and 33 bytes" $ do
+    importXOnlyPubKey (BS.replicate 31 1) `shouldBe` Nothing
+    importXOnlyPubKey (BS.replicate 33 1) `shouldBe` Nothing
 
 -- * Taproot tweaks
 
-taprootSpec :: SpecWith Ctx
+taprootSpec :: Spec
 taprootSpec = describe "Taproot tweaks" $ do
   describe "BIP-341 key path input" $ mapM_ (uncurry bip341VectorSpec) (zip [0 :: Int ..] bip341Vectors)
-  it "tweaks the public key like the secret key" $ \ctx ->
+  it "tweaks the public key like the secret key" $
     property $ \(k :: SecKey, t :: Tweak) ->
-      fmap (derivePubKey ctx) (tweakAddXOnlySecKey ctx k t) == tweakAddXOnlyPubKey ctx (derivePubKey ctx k) t
-  it "tweaks a key and its negation alike" $ \ctx ->
+      fmap (derivePubKey) (tweakAddXOnlySecKey k t) == tweakAddXOnlyPubKey (derivePubKey k) t
+  it "tweaks a key and its negation alike" $
     property $ \(k :: SecKey, t :: Tweak) ->
-      let p = derivePubKey ctx k
-       in tweakAddXOnlyPubKey ctx p t == tweakAddXOnlyPubKey ctx (negatePubKey ctx p) t
-  it "signs for the tweaked output key with the tweaked secret key" $ \ctx ->
+      let p = derivePubKey k
+       in tweakAddXOnlyPubKey p t == tweakAddXOnlyPubKey (negatePubKey p) t
+  it "signs for the tweaked output key with the tweaked secret key" $
     property $ \(m :: Msg, k :: SecKey, t :: Tweak) ->
-      let k' = fromJust (tweakAddXOnlySecKey ctx k t)
-          p' = fromJust (tweakAddXOnlyPubKey ctx (derivePubKey ctx k) t)
-       in verifySchnorr ctx p' (signSchnorr ctx k' m) m
-  it "adding zero gives the point with an even y coordinate" $ \ctx ->
+      let k' = fromJust (tweakAddXOnlySecKey k t)
+          p' = fromJust (tweakAddXOnlyPubKey (derivePubKey k) t)
+       in verifySchnorr p' (signSchnorr k' m) m
+  it "adding zero gives the point with an even y coordinate" $
     property $ \(k :: SecKey) ->
-      let p = derivePubKey ctx k
-       in fmap (exportPubKey ctx True) (tweakAddXOnlyPubKey ctx p (fromString zero))
-            == Just (BS.cons 0x02 (exportXOnlyPubKey ctx p))
-  it "negates a secret key whose public key has an odd y coordinate" $ \ctx ->
+      let p = derivePubKey k
+       in fmap (exportPubKey True) (tweakAddXOnlyPubKey p (fromString zero))
+            == Just (BS.cons 0x02 (exportXOnlyPubKey p))
+  it "negates a secret key whose public key has an odd y coordinate" $
     -- Key n - 1 has the public key -G, whose y coordinate is odd, so the key
     -- is negated to 1 before the zero tweak is added.
-    tweakAddXOnlySecKey ctx (fromString orderMinusOne) (fromString zero) `shouldBe` Just keyOne
-  it "fails when the result would be zero" $ \ctx -> do
+    tweakAddXOnlySecKey (fromString orderMinusOne) (fromString zero) `shouldBe` Just keyOne
+  it "fails when the result would be zero" $ do
     -- G has an even y coordinate, so key 1 is not negated: 1 + (n - 1) = 0.
-    tweakAddXOnlySecKey ctx keyOne (fromString orderMinusOne) `shouldBe` Nothing
-    tweakAddXOnlyPubKey ctx (derivePubKey ctx keyOne) (fromString orderMinusOne) `shouldBe` Nothing
+    tweakAddXOnlySecKey keyOne (fromString orderMinusOne) `shouldBe` Nothing
+    tweakAddXOnlyPubKey (derivePubKey keyOne) (fromString orderMinusOne) `shouldBe` Nothing
     -- Key n - 1 is negated to 1 first, with the same result.
-    tweakAddXOnlySecKey ctx (fromString orderMinusOne) (fromString orderMinusOne) `shouldBe` Nothing
-    tweakAddXOnlyPubKey ctx (derivePubKey ctx (fromString orderMinusOne)) (fromString orderMinusOne)
+    tweakAddXOnlySecKey (fromString orderMinusOne) (fromString orderMinusOne) `shouldBe` Nothing
+    tweakAddXOnlyPubKey (derivePubKey (fromString orderMinusOne)) (fromString orderMinusOne)
       `shouldBe` Nothing
 
 -- The internal key gives the internal public key. The tweak gives the tweaked
 -- secret key and the output key, and they match. The tweaked key signs the
 -- signature hash to the signature in the witness, which verifies against the
 -- output key.
-bip341VectorSpec :: Int -> BIP341Vector -> SpecWith Ctx
-bip341VectorSpec i v = it (show i) $ \ctx -> do
+bip341VectorSpec :: Int -> BIP341Vector -> Spec
+bip341VectorSpec i v = it (show i) $ do
   let k = fromString v.internalKey :: SecKey
       t = fromString v.tapTweak :: Tweak
       k' = fromString v.tweakedKey :: SecKey
       m = fromString v.sigHash :: Msg
       s = fromString v.keyPathSig :: SchnorrSig
-  bytesToHex (exportXOnlyPubKey ctx (derivePubKey ctx k)) `shouldBe` v.internalPub
-  tweakAddXOnlySecKey ctx k t `shouldBe` Just k'
-  fmap (bytesToHex . exportXOnlyPubKey ctx) (tweakAddXOnlyPubKey ctx (derivePubKey ctx k) t)
+  bytesToHex (exportXOnlyPubKey (derivePubKey k)) `shouldBe` v.internalPub
+  tweakAddXOnlySecKey k t `shouldBe` Just k'
+  fmap (bytesToHex . exportXOnlyPubKey) (tweakAddXOnlyPubKey (derivePubKey k) t)
     `shouldBe` Just v.outputKey
-  signSchnorr ctx k' m `shouldBe` s
-  verifySchnorr ctx (fromJust (importXOnlyPubKey ctx (hexToBytes v.outputKey))) s m `shouldBe` True
-
-contextSpec :: SpecWith Ctx
-contextSpec = describe "contexts" $ do
-  it "a clone signs and verifies like the original" $ \ctx -> do
-    clone <- cloneContext ctx
-    signMsg clone keyOne satoshiMsg `shouldBe` signMsg ctx keyOne satoshiMsg
-    verifySig clone (derivePubKey ctx keyOne) (signMsg ctx keyOne satoshiMsg) satoshiMsg `shouldBe` True
-  it "randomizing does not change signatures" $ \ctx -> do
-    let original = signMsg ctx keyOne satoshiMsg
-    randomizeContext ctx
-    signMsg ctx keyOne satoshiMsg `shouldBe` original
-  it "withContext gives a working context" $ \_ ->
-    withContext $ \ctx ->
-      bytesToHex (exportSig ctx (signMsg ctx keyOne satoshiMsg)) `shouldBe` satoshiDer
+  signSchnorr k' m `shouldBe` s
+  verifySchnorr (fromJust (importXOnlyPubKey (hexToBytes v.outputKey))) s m `shouldBe` True
 
 -- * Values built with the raw constructors of the Internal module
 
-rawValueSpec :: SpecWith Ctx
+rawValueSpec :: Spec
 rawValueSpec = describe "raw values from the Internal module" $ do
   describe "a public key with a zero x coordinate" $ do
-    it "does not verify, instead of aborting the process" $ \ctx ->
+    it "does not verify, instead of aborting the process" $
       property $ \(m :: Msg, k :: SecKey) ->
-        not (verifySig ctx zeroKey (signMsg ctx k m) m)
-    it "throws on export" $ \ctx ->
-      evaluate (exportPubKey ctx True zeroKey) `shouldThrow` anyErrorCall
-    it "throws on show" $ \_ ->
+        not (verifySig zeroKey (signMsg k m) m)
+    it "throws on export" $
+      evaluate (exportPubKey True zeroKey) `shouldThrow` anyErrorCall
+    it "throws on show" $
       evaluate (length (show zeroKey)) `shouldThrow` anyErrorCall
-    it "fails to tweak" $ \ctx -> do
-      tweakAddPubKey ctx zeroKey (fromString one) `shouldBe` Nothing
-      tweakMulPubKey ctx zeroKey (fromString one) `shouldBe` Nothing
-    it "fails to combine" $ \ctx ->
-      combinePubKeys ctx [derivePubKey ctx keyOne, zeroKey] `shouldBe` Nothing
-    it "does not verify a Schnorr signature" $ \ctx ->
-      verifySchnorr ctx zeroKey (signSchnorr ctx keyOne satoshiMsg) satoshiMsg `shouldBe` False
-    it "throws on x-only export" $ \ctx ->
-      evaluate (exportXOnlyPubKey ctx zeroKey) `shouldThrow` anyErrorCall
-    it "fails to tweak as an x-only key" $ \ctx ->
-      tweakAddXOnlyPubKey ctx zeroKey (fromString one) `shouldBe` Nothing
-  it "a public key off the curve fails to combine" $ \ctx ->
-    combinePubKeys ctx [derivePubKey ctx keyOne, PubKey (BS.replicate 64 1)] `shouldBe` Nothing
-  it "a zero secret key throws instead of signing" $ \ctx -> do
-    evaluate (signMsg ctx (SecKey (BS.replicate 32 0)) satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (derivePubKey ctx (SecKey (BS.replicate 32 0))) `shouldThrow` anyErrorCall
-    evaluate (signSchnorr ctx (SecKey (BS.replicate 32 0)) satoshiMsg) `shouldThrow` anyErrorCall
-  it "a zero secret key fails to tweak as an x-only key" $ \ctx ->
-    tweakAddXOnlySecKey ctx (SecKey (BS.replicate 32 0)) (fromString one) `shouldBe` Nothing
-  it "a tweak of n fails" $ \ctx -> do
-    tweakAddSecKey ctx keyOne (Tweak (hexToBytes order)) `shouldBe` Nothing
-    tweakNegate ctx (Tweak (hexToBytes order)) `shouldBe` Nothing
-    tweakAddXOnlySecKey ctx keyOne (Tweak (hexToBytes order)) `shouldBe` Nothing
-    tweakAddXOnlyPubKey ctx (derivePubKey ctx keyOne) (Tweak (hexToBytes order)) `shouldBe` Nothing
-  it "values of the wrong length throw before reaching the library" $ \ctx -> do
-    evaluate (derivePubKey ctx (SecKey "a")) `shouldThrow` anyErrorCall
-    evaluate (signMsg ctx (SecKey "a") satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (signMsg ctx keyOne (Msg "a")) `shouldThrow` anyErrorCall
-    evaluate (verifySig ctx (derivePubKey ctx keyOne) (Sig "a") satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (verifySig ctx (PubKey "a") (signMsg ctx keyOne satoshiMsg) satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (verifySig ctx (derivePubKey ctx keyOne) (signMsg ctx keyOne satoshiMsg) (Msg "a")) `shouldThrow` anyErrorCall
-    evaluate (exportSig ctx (Sig "a")) `shouldThrow` anyErrorCall
-    evaluate (exportCompactSig ctx (Sig "a")) `shouldThrow` anyErrorCall
-    evaluate (importCompactSig ctx (CompactSig "a")) `shouldThrow` anyErrorCall
-    evaluate (normalizeSig ctx (Sig "a")) `shouldThrow` anyErrorCall
-    evaluate (isLowS ctx (Sig "a")) `shouldThrow` anyErrorCall
-    evaluate (exportPubKey ctx True (PubKey "a")) `shouldThrow` anyErrorCall
-    evaluate (tweakAddSecKey ctx keyOne (Tweak "a")) `shouldThrow` anyErrorCall
-    evaluate (tweakMulSecKey ctx (SecKey "a") (fromString one)) `shouldThrow` anyErrorCall
-    evaluate (tweakAddPubKey ctx (PubKey "a") (fromString one)) `shouldThrow` anyErrorCall
-    evaluate (tweakMulPubKey ctx (derivePubKey ctx keyOne) (Tweak "a")) `shouldThrow` anyErrorCall
-    evaluate (tweakNegate ctx (Tweak "a")) `shouldThrow` anyErrorCall
-    evaluate (combinePubKeys ctx [derivePubKey ctx keyOne, PubKey "a"]) `shouldThrow` anyErrorCall
-    evaluate (tweakAddSecKey ctx (SecKey "a") (fromString one)) `shouldThrow` anyErrorCall
-    evaluate (tweakMulSecKey ctx keyOne (Tweak "a")) `shouldThrow` anyErrorCall
-    evaluate (tweakAddPubKey ctx (derivePubKey ctx keyOne) (Tweak "a")) `shouldThrow` anyErrorCall
-    evaluate (tweakMulPubKey ctx (PubKey "a") (fromString one)) `shouldThrow` anyErrorCall
-    evaluate (signMsgWith ctx keyOne satoshiMsg (Just "a")) `shouldThrow` anyErrorCall
-    evaluate (signSchnorr ctx (SecKey "a") satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (signSchnorr ctx keyOne (Msg "a")) `shouldThrow` anyErrorCall
-    evaluate (verifySchnorr ctx (derivePubKey ctx keyOne) (SchnorrSig "a") satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (verifySchnorr ctx (PubKey "a") (signSchnorr ctx keyOne satoshiMsg) satoshiMsg) `shouldThrow` anyErrorCall
-    evaluate (verifySchnorr ctx (derivePubKey ctx keyOne) (signSchnorr ctx keyOne satoshiMsg) (Msg "a")) `shouldThrow` anyErrorCall
-    evaluate (exportXOnlyPubKey ctx (PubKey "a")) `shouldThrow` anyErrorCall
-    evaluate (tweakAddXOnlyPubKey ctx (PubKey "a") (fromString one)) `shouldThrow` anyErrorCall
-    evaluate (tweakAddXOnlyPubKey ctx (derivePubKey ctx keyOne) (Tweak "a")) `shouldThrow` anyErrorCall
-    evaluate (tweakAddXOnlySecKey ctx (SecKey "a") (fromString one)) `shouldThrow` anyErrorCall
-    evaluate (tweakAddXOnlySecKey ctx keyOne (Tweak "a")) `shouldThrow` anyErrorCall
+    it "fails to tweak" $ do
+      tweakAddPubKey zeroKey (fromString one) `shouldBe` Nothing
+      tweakMulPubKey zeroKey (fromString one) `shouldBe` Nothing
+    it "fails to combine" $
+      combinePubKeys [derivePubKey keyOne, zeroKey] `shouldBe` Nothing
+    it "does not verify a Schnorr signature" $
+      verifySchnorr zeroKey (signSchnorr keyOne satoshiMsg) satoshiMsg `shouldBe` False
+    it "throws on x-only export" $
+      evaluate (exportXOnlyPubKey zeroKey) `shouldThrow` anyErrorCall
+    it "fails to tweak as an x-only key" $
+      tweakAddXOnlyPubKey zeroKey (fromString one) `shouldBe` Nothing
+  it "a public key off the curve fails to combine" $
+    combinePubKeys [derivePubKey keyOne, PubKey (BS.replicate 64 1)] `shouldBe` Nothing
+  it "a zero secret key throws instead of signing" $ do
+    evaluate (signMsg (SecKey (BS.replicate 32 0)) satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (derivePubKey (SecKey (BS.replicate 32 0))) `shouldThrow` anyErrorCall
+    evaluate (signSchnorr (SecKey (BS.replicate 32 0)) satoshiMsg) `shouldThrow` anyErrorCall
+  it "a zero secret key fails to tweak as an x-only key" $
+    tweakAddXOnlySecKey (SecKey (BS.replicate 32 0)) (fromString one) `shouldBe` Nothing
+  it "a tweak of n fails" $ do
+    tweakAddSecKey keyOne (Tweak (hexToBytes order)) `shouldBe` Nothing
+    tweakNegate (Tweak (hexToBytes order)) `shouldBe` Nothing
+    tweakAddXOnlySecKey keyOne (Tweak (hexToBytes order)) `shouldBe` Nothing
+    tweakAddXOnlyPubKey (derivePubKey keyOne) (Tweak (hexToBytes order)) `shouldBe` Nothing
+  it "values of the wrong length throw before reaching the library" $ do
+    evaluate (derivePubKey (SecKey "a")) `shouldThrow` anyErrorCall
+    evaluate (signMsg (SecKey "a") satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (signMsg keyOne (Msg "a")) `shouldThrow` anyErrorCall
+    evaluate (verifySig (derivePubKey keyOne) (Sig "a") satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (verifySig (PubKey "a") (signMsg keyOne satoshiMsg) satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (verifySig (derivePubKey keyOne) (signMsg keyOne satoshiMsg) (Msg "a")) `shouldThrow` anyErrorCall
+    evaluate (exportSig (Sig "a")) `shouldThrow` anyErrorCall
+    evaluate (exportCompactSig (Sig "a")) `shouldThrow` anyErrorCall
+    evaluate (importCompactSig (CompactSig "a")) `shouldThrow` anyErrorCall
+    evaluate (normalizeSig (Sig "a")) `shouldThrow` anyErrorCall
+    evaluate (isLowS (Sig "a")) `shouldThrow` anyErrorCall
+    evaluate (exportPubKey True (PubKey "a")) `shouldThrow` anyErrorCall
+    evaluate (tweakAddSecKey keyOne (Tweak "a")) `shouldThrow` anyErrorCall
+    evaluate (tweakMulSecKey (SecKey "a") (fromString one)) `shouldThrow` anyErrorCall
+    evaluate (tweakAddPubKey (PubKey "a") (fromString one)) `shouldThrow` anyErrorCall
+    evaluate (tweakMulPubKey (derivePubKey keyOne) (Tweak "a")) `shouldThrow` anyErrorCall
+    evaluate (tweakNegate (Tweak "a")) `shouldThrow` anyErrorCall
+    evaluate (combinePubKeys [derivePubKey keyOne, PubKey "a"]) `shouldThrow` anyErrorCall
+    evaluate (tweakAddSecKey (SecKey "a") (fromString one)) `shouldThrow` anyErrorCall
+    evaluate (tweakMulSecKey keyOne (Tweak "a")) `shouldThrow` anyErrorCall
+    evaluate (tweakAddPubKey (derivePubKey keyOne) (Tweak "a")) `shouldThrow` anyErrorCall
+    evaluate (tweakMulPubKey (PubKey "a") (fromString one)) `shouldThrow` anyErrorCall
+    evaluate (signMsgWith keyOne satoshiMsg (Just "a")) `shouldThrow` anyErrorCall
+    evaluate (signSchnorr (SecKey "a") satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (signSchnorr keyOne (Msg "a")) `shouldThrow` anyErrorCall
+    evaluate (verifySchnorr (derivePubKey keyOne) (SchnorrSig "a") satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (verifySchnorr (PubKey "a") (signSchnorr keyOne satoshiMsg) satoshiMsg) `shouldThrow` anyErrorCall
+    evaluate (verifySchnorr (derivePubKey keyOne) (signSchnorr keyOne satoshiMsg) (Msg "a")) `shouldThrow` anyErrorCall
+    evaluate (exportXOnlyPubKey (PubKey "a")) `shouldThrow` anyErrorCall
+    evaluate (tweakAddXOnlyPubKey (PubKey "a") (fromString one)) `shouldThrow` anyErrorCall
+    evaluate (tweakAddXOnlyPubKey (derivePubKey keyOne) (Tweak "a")) `shouldThrow` anyErrorCall
+    evaluate (tweakAddXOnlySecKey (SecKey "a") (fromString one)) `shouldThrow` anyErrorCall
+    evaluate (tweakAddXOnlySecKey keyOne (Tweak "a")) `shouldThrow` anyErrorCall
   where
     zeroKey = PubKey (BS.replicate 64 0)
 
 -- * Derived instances
 
-instanceSpec :: SpecWith Ctx
+instanceSpec :: Spec
 instanceSpec = describe "derived instances" $ do
-  it "equal values hash equally, whichever way they were built" $ \ctx ->
+  it "equal values hash equally, whichever way they were built" $
     property $ \(m :: Msg, k :: SecKey) ->
-      let p = derivePubKey ctx k
-          s = signMsg ctx k m
-          sc = signSchnorr ctx k m
-       in hash p == hash (fromJust (importPubKey ctx (exportPubKey ctx False p)))
-            && hash s == hash (fromJust (importSig ctx (exportSig ctx s)))
+      let p = derivePubKey k
+          s = signMsg k m
+          sc = signSchnorr k m
+       in hash p == hash (fromJust (importPubKey (exportPubKey False p)))
+            && hash s == hash (fromJust (importSig (exportSig s)))
             && hash k == hash (fromJust (secKey k.get))
             && hash sc == hash (fromJust (schnorrSig sc.get))
-  it "can be fully evaluated" $ \ctx -> do
-    let p = derivePubKey ctx keyOne
-        s = signMsg ctx keyOne satoshiMsg
-    ((p, s, keyOne, satoshiMsg, histTweak, exportCompactSig ctx s, signSchnorr ctx keyOne satoshiMsg) `deepseq` ())
+  it "can be fully evaluated" $ do
+    let p = derivePubKey keyOne
+        s = signMsg keyOne satoshiMsg
+    ((p, s, keyOne, satoshiMsg, histTweak, exportCompactSig s, signSchnorr keyOne satoshiMsg) `deepseq` ())
       `shouldBe` ()

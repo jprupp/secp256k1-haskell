@@ -10,9 +10,6 @@ module Crypto.Secp256k1.Internal.ForeignTypes where
 import Foreign (Ptr)
 import Foreign.C (CInt (..), CUChar, CUInt (..))
 
--- | Context (@secp256k1_context@).
-data LCtx
-
 -- | Public key (@secp256k1_pubkey@), 64 bytes.
 data PubKey64
 
@@ -48,9 +45,6 @@ data SchnorrSig64
 
 -- | Auxiliary randomness for BIP-340 signing, 32 bytes.
 data AuxRand32
-
--- | Flags passed to @secp256k1_context_create@.
-type CtxFlags = CUInt
 
 -- | Flags passed to @secp256k1_ec_pubkey_serialize@.
 type SerFlags = CUInt

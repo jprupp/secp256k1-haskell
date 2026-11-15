@@ -1,160 +1,99 @@
-{-# LANGUAGE NoFieldSelectors #-}
+-- | The one libsecp256k1 context of the process.
+--
+-- == Purpose
+--
+-- Every function of libsecp256k1 takes a context: an object that holds the
+-- callbacks for errors and the random blinding values that protect secret key
+-- operations against side-channel leakage. Earlier versions of this package
+-- made the caller create one and pass it to every function. That argument
+-- carried no information, since any context gives the same results, yet it
+-- ran through every signature of every program built on the package. Now the
+-- package keeps a single context here and uses it for everything.
+--
+-- == Design
+--
+-- * __Created on first use.__ 'globalContext' is a top-level value, so the
+--   runtime evaluates it once, the first time a function needs it, and every
+--   later use gets the same pointer. 'unsafePerformIO' takes a lock on the
+--   value while it runs (@unsafeDupablePerformIO@ does not), so two threads
+--   that arrive together cannot both create a context. The @NOINLINE@ pragma
+--   keeps the compiler from copying the definition to its uses, which would
+--   make a context per use.
+--
+-- * __Randomized once, then read-only.__ The context is seeded with 32 bytes
+--   from the operating system before anything else can see it, which is what
+--   libsecp256k1 recommends. After that nothing writes to it, and the C
+--   library allows any number of threads to read one context at once. This is
+--   why there is no way to randomize it again: that writes to the context
+--   while other threads may be reading it, which is a data race, and guarding
+--   against it would put a lock around every operation.
+--
+-- * __Never aborts.__ The illegal-argument callback is replaced with one that
+--   does nothing (see @cbits/illegal_callback.c@), so an invalid argument
+--   makes a C function return 0 instead of aborting the process. Two rules
+--   follow for every binding that uses the context. The return value of the C
+--   function must always be checked, because after a failed check its outputs
+--   are undefined. And a C function that ignores the result of an internal
+--   check must get validated inputs, as 'Crypto.Secp256k1.combinePubKeys'
+--   does for @secp256k1_ec_pubkey_combine@.
+--
+-- * __Never destroyed.__ The context lives as long as the process, like any
+--   other global, so it has no finalizer. The operating system reclaims it at
+--   exit.
+--
+-- * __Hidden.__ This module is not exposed by the package. If the pointer
+--   could be reached from outside, any code could randomize or destroy the
+--   context, or change its callbacks, under every other user of it. The
+--   modules with the raw bindings, which take a context pointer, and the one
+--   that creates contexts are hidden as well, so no code outside the package
+--   can make, hold or name a context at all.
+--
+-- == What is given up
+--
+-- A program can no longer have several contexts, for example one per thread
+-- or one per secret, and it can no longer refresh the blinding during a long
+-- run. Neither changes any result. The blinding is defence in depth on top
+-- of code that is already constant-time, and seeding it once per process is
+-- what the C library asks for.
+module Crypto.Secp256k1.Internal.Context (globalContext) where
 
--- | Internal module. Everything is exported and there is no API stability
--- guarantee. In particular 'contextDestroy' is here for add-on packages and
--- tests that manage raw context pointers. Never call it on the pointer inside
--- a 'Ctx', because the garbage collector will destroy that one again.
-module Crypto.Secp256k1.Internal.Context where
-
-import Control.Exception (mask_)
-import Control.Monad (unless)
-import Crypto.Secp256k1.Internal.ForeignTypes
-  ( CtxFlags,
-    LCtx,
-    Ret,
-    Seed32,
-    isSuccess,
+import Control.Exception (mask_, onException)
+import Control.Monad (unless, when)
+import Crypto.Secp256k1.Internal.ContextOps
+  ( LCtx,
+    contextCreate,
+    contextDestroy,
+    contextRandomize,
+    illegalCallbackFunPtr,
+    setIllegalCallback,
+    signVerify,
   )
+import Crypto.Secp256k1.Internal.ForeignTypes (isSuccess)
 import Crypto.Secp256k1.Internal.Util (withRandomSeed)
-import Foreign (FunPtr, Ptr, nullPtr)
-import Foreign.C (CInt (..), CString, CUInt (..))
-import Foreign.ForeignPtr
-  ( ForeignPtr,
-    newForeignPtr,
-    withForeignPtr,
-  )
+import Foreign (Ptr, nullPtr)
 import System.IO.Unsafe (unsafePerformIO)
 
--- | A libsecp256k1 context. It is destroyed by the garbage collector.
+-- | The context that every binding of the package uses. It is created,
+-- given the illegal-argument callback that does nothing, and randomized the
+-- first time it is needed, and it is only read from then on, so any number of
+-- threads may use it at once. See the module header for why it is built this
+-- way.
 --
--- A context can be shared between threads. Every function in
--- "Crypto.Secp256k1" only reads it, except 'randomizeContext', which needs
--- exclusive access. See there.
-data Ctx = Ctx (ForeignPtr LCtx)
-
--- | Re-seed the blinding values that protect secret key operations against
--- side-channel leakage. 'createContext' already does this once, which is what
--- libsecp256k1 recommends, so most programs never need to call it.
+-- Bindings must only pass it to C functions that take a @const@ context.
+-- Never pass it to @secp256k1_context_randomize@,
+-- @secp256k1_context_destroy@ or a function that sets a callback.
 --
--- This function modifies the context. Calling it while another thread uses
--- the same context, for example by evaluating 'Crypto.Secp256k1.signMsg', is a
--- data race in the C library. Either call it before the context is shared, or
--- protect every use of the context with a read-write lock.
-randomizeContext :: Ctx -> IO ()
-randomizeContext (Ctx fctx) = withForeignPtr fctx $ \ctx -> do
-  ret <- withRandomSeed $ contextRandomize ctx
-  unless (isSuccess ret) $ error "Could not randomize context"
-
--- | Create a context and randomize it.
-createContext :: IO Ctx
-createContext = do
-  ctx <- mask_ $ contextCreate signVerify >>= wrapContext
-  randomizeContext ctx
+-- If the context cannot be created or randomized, for example because the
+-- operating system gives no entropy, the error is raised by the function that
+-- needed the context, and again by every later one.
+globalContext :: Ptr LCtx
+globalContext = unsafePerformIO . mask_ $ do
+  ctx <- contextCreate signVerify
+  when (ctx == nullPtr) $ error "Could not create secp256k1 context"
+  setIllegalCallback ctx illegalCallbackFunPtr nullPtr
+  ret <- withRandomSeed (contextRandomize ctx) `onException` contextDestroy ctx
+  unless (isSuccess ret) $ do
+    contextDestroy ctx
+    error "Could not randomize secp256k1 context"
   return ctx
-
--- | Copy a context, including its randomization.
-cloneContext :: Ctx -> IO Ctx
-cloneContext (Ctx fctx) =
-  withForeignPtr fctx $ \ctx -> mask_ $ contextClone ctx >>= wrapContext
-
--- | Create a context and pass it to the action. The context is not destroyed
--- when the action returns. It stays valid for as long as it is referenced,
--- and the garbage collector destroys it afterwards.
-withContext :: (Ctx -> IO a) -> IO a
-withContext = (createContext >>=)
-
--- | Wrap a raw context pointer. The illegal-argument callback is replaced
--- with one that does nothing (see @cbits/illegal_callback.c@), so an invalid
--- argument makes the C function return 0 instead of aborting the process.
---
--- Two rules follow for every binding that uses a 'Ctx'. The return value of
--- the C function must always be checked, because after a failed check its
--- outputs are undefined. And a C function that ignores the result of an
--- internal check must get validated inputs, as
--- 'Crypto.Secp256k1.combinePubKeys' does for @secp256k1_ec_pubkey_combine@.
-wrapContext :: Ptr LCtx -> IO Ctx
-wrapContext pctx = do
-  setIllegalCallback pctx illegalCallbackFunPtr nullPtr
-  Ctx <$> newForeignPtr contextDestroyFunPtr pctx
-
--- | Context used to validate values that are built without a context, such
--- as public keys and signatures read from their internal representation or
--- from a string. It is only used for parsing and serialization, which do not
--- involve secret keys and so do not need randomization. It is never modified
--- after creation, so sharing it between threads is safe.
-validationContext :: Ctx
-validationContext =
-  unsafePerformIO . mask_ $ contextCreate none >>= wrapContext
-{-# NOINLINE validationContext #-}
-
--- | @SECP256K1_CONTEXT_NONE@. Enough for every operation since libsecp256k1
--- 0.2.0, and for parsing and serialization in older versions.
-none :: CtxFlags
-none = 0x0001
-
--- | @SECP256K1_CONTEXT_VERIFY@. Deprecated upstream since 0.2.0, where it
--- means the same as 'none'. Older libraries need it to verify.
-verify :: CtxFlags
-verify = 0x0101
-
--- | @SECP256K1_CONTEXT_SIGN@. Deprecated upstream since 0.2.0, where it means
--- the same as 'none'. Older libraries need it to sign.
-sign :: CtxFlags
-sign = 0x0201
-
--- | Both 'sign' and 'verify', passed by 'createContext'. The package requires
--- libsecp256k1 0.2.0 or later for its Schnorr bindings, and from that version
--- on these flags mean the same as 'none'. Passing them is harmless.
-signVerify :: CtxFlags
-signVerify = 0x0301
-
--- | Binding to @secp256k1_context_create@.
-foreign import ccall safe "secp256k1.h secp256k1_context_create"
-  contextCreate ::
-    CtxFlags ->
-    IO (Ptr LCtx)
-
--- | Binding to @secp256k1_context_clone@.
-foreign import ccall safe "secp256k1.h secp256k1_context_clone"
-  contextClone ::
-    Ptr LCtx ->
-    IO (Ptr LCtx)
-
--- | Binding to @secp256k1_context_destroy@.
-foreign import ccall safe "secp256k1.h secp256k1_context_destroy"
-  contextDestroy :: Ptr LCtx -> IO ()
-
--- | Pointer to @secp256k1_context_destroy@, for use as a finalizer or callback.
-foreign import ccall safe "secp256k1.h &secp256k1_context_destroy"
-  contextDestroyFunPtr :: FunPtr (Ptr LCtx -> IO ())
-
--- | Pointer to @secp256k1_haskell_illegal_callback@, for use as a finalizer or callback.
-foreign import ccall safe "&secp256k1_haskell_illegal_callback"
-  illegalCallbackFunPtr :: FunPtr (CString -> Ptr a -> IO ())
-
--- | Binding to @secp256k1_context_set_illegal_callback@.
-foreign import ccall safe "secp256k1.h secp256k1_context_set_illegal_callback"
-  setIllegalCallback ::
-    Ptr LCtx ->
-    -- | message, data
-    FunPtr (CString -> Ptr a -> IO ()) ->
-    -- | data
-    Ptr a ->
-    IO ()
-
--- | Binding to @secp256k1_context_set_error_callback@.
-foreign import ccall safe "secp256k1.h secp256k1_context_set_error_callback"
-  setErrorCallback ::
-    Ptr LCtx ->
-    -- | message, data
-    FunPtr (CString -> Ptr a -> IO ()) ->
-    -- | data
-    Ptr a ->
-    IO ()
-
--- | Binding to @secp256k1_context_randomize@.
-foreign import ccall safe "secp256k1.h secp256k1_context_randomize"
-  contextRandomize ::
-    Ptr LCtx ->
-    Ptr Seed32 ->
-    IO Ret
+{-# NOINLINE globalContext #-}

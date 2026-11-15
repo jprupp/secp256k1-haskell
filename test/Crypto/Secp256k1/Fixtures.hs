@@ -13,6 +13,7 @@ import Data.Maybe (fromJust)
 import Data.String (fromString)
 
 -- * Fixtures
+
 --
 -- Every expected value is a literal from an independent source: the secp256k1
 -- generator, the RFC 6979 vector for key 1 and sha256 "Satoshi Nakamoto",
@@ -124,5 +125,5 @@ quoted :: String -> String
 quoted s = "\"" ++ s ++ "\""
 
 -- The negation of a public key: multiplication by n - 1.
-negatePubKey :: Ctx -> PubKey -> PubKey
-negatePubKey ctx p = fromJust (tweakMulPubKey ctx p (fromString orderMinusOne))
+negatePubKey :: PubKey -> PubKey
+negatePubKey p = fromJust (tweakMulPubKey p (fromString orderMinusOne))

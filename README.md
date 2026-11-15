@@ -58,9 +58,12 @@ and, through it, of the rest of the Haskoin libraries.
   computation.
 - **Never abort the process.** By default libsecp256k1 calls `abort()` on an
   illegal argument, which kills the whole Haskell program and cannot be caught.
-  Every context this package creates installs a callback that makes the C
-  function fail instead, so a bad argument becomes `Nothing`, `False` or an
-  exception.
+  The context of this package installs a callback that makes the C function
+  fail instead, so a bad argument becomes `Nothing`, `False` or an exception.
+- **No context to carry.** libsecp256k1 wants a context object in every call.
+  The package keeps one for the whole process, randomized once and never
+  modified again, and passes it itself. No function takes a context. See
+  [Contexts](#contexts).
 - **Pure where the mathematics is pure.** Signing with deterministic nonces,
   verifying, deriving and tweaking keys are pure functions. Only operations
   that need fresh randomness run in `IO`.
@@ -84,7 +87,7 @@ and, through it, of the rest of the Haskoin libraries.
 | Taproot (BIP-341)    | Tweaking an x-only public key and its secret key                                               |
 | Key arithmetic       | Add or multiply secret and public keys by a tweak, negate, combine public keys                 |
 | Recovery             | Recoverable ECDSA signatures and public key recovery, as Bitcoin signed messages use           |
-| Safety               | Validated values, no aborts, length checks before every C call, contexts shared across threads |
+| Safety               | Validated values, no aborts, length checks before every C call, one read-only context for all threads |
 | Testing              | QuickCheck `Arbitrary` instances for secret keys, hashes and tweaks                            |
 
 ### What is not included
@@ -155,7 +158,7 @@ works.
 
    ```yaml
    extra-deps:
-     - secp256k1-haskell-2.1.0
+     - secp256k1-haskell-3.0.0
      - base16-2.0
    ```
 
@@ -182,23 +185,21 @@ import Crypto.Secp256k1
 
 main :: IO ()
 main = do
-  ctx <- createContext
-
   -- Hex literals go through IsString, which validates them.
   let key = "c7e5a2b4f4c5d7e8a9b0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5e6f70" :: SecKey
       hash = "4b688df40bcedbe641ddb16ff0a1842d9c67ea1c3bf63f3e0471baa664531d1a" :: Msg
-      pub = derivePubKey ctx key
+      pub = derivePubKey key
 
   -- ECDSA
-  let s = signMsg ctx key hash
-  print (verifySig ctx pub s hash)
+  let s = signMsg key hash
+  print (verifySig pub s hash)
 
   -- BIP-340 Schnorr, with fresh auxiliary randomness
-  schnorr <- signSchnorrIO ctx key hash
-  print (verifySchnorr ctx pub schnorr hash)
+  schnorr <- signSchnorrIO key hash
+  print (verifySchnorr pub schnorr hash)
 
   -- Round trip through the standard encodings
-  let Just pub' = importPubKey ctx (exportPubKey ctx True pub)
+  let Just pub' = importPubKey (exportPubKey True pub)
   print (pub == pub')
 ```
 
@@ -207,16 +208,16 @@ main = do
 This walks through what a wallet or a protocol implementation typically does,
 and why each step looks the way it does.
 
-### 1. Create one context and share it
+### 1. Nothing to set up
 
 ```haskell
-ctx <- createContext
+import Crypto.Secp256k1
 ```
 
-A context holds precomputed tables and random blinding values. Creating one is
-relatively expensive, and one context can be used by every thread for the life
-of the program. `createContext` randomizes it once, which is what libsecp256k1
-recommends.
+libsecp256k1 needs a context, which holds random blinding values, but there is
+none to create here. The package makes one the first time a function needs it,
+randomizes it, and uses it for every call from every thread. See
+[Contexts](#contexts).
 
 ### 2. Get keys from bytes
 
@@ -239,7 +240,7 @@ serialization, BIP-340 uses tagged hashes. Build the `Msg` from your hash:
 
 ```haskell
 let Just m = msg hashBytes
-    s = signMsgLowR ctx key m -- or signMsg for plain RFC 6979
+    s = signMsgLowR key m -- or signMsg for plain RFC 6979
 ```
 
 Signing is deterministic: the same key and hash give the same signature, so
@@ -251,19 +252,19 @@ Never send the `get` bytes of a `PubKey` or `Sig`: they are libsecp256k1's
 internal layout. Use the standard encodings:
 
 ```haskell
-let pubBytes = exportPubKey ctx True pub -- 33-byte compressed SEC1
-    derBytes = exportSig ctx s -- DER, as in Bitcoin transactions
-    compactBytes = exportCompactSig ctx s -- 64 bytes r || s
+let pubBytes = exportPubKey True pub -- 33-byte compressed SEC1
+    derBytes = exportSig s -- DER, as in Bitcoin transactions
+    compactBytes = exportCompactSig s -- 64 bytes r || s
 ```
 
 ### 5. Parse and verify what you receive
 
 ```haskell
 verified = fromMaybe False $ do
-  pub <- importPubKey ctx pubBytes
-  s <- importSig ctx derBytes
+  pub <- importPubKey pubBytes
+  s <- importSig derBytes
   m <- msg hashBytes
-  return (verifySig ctx pub (normalizeSig ctx s) m)
+  return (verifySig pub (normalizeSig s) m)
 ```
 
 Every import returns `Maybe`, so malformed input is handled in one place.
@@ -275,9 +276,9 @@ lower-S, as Bitcoin's relay rules do.
 ### 6. Move to Schnorr where the protocol allows
 
 ```haskell
-sig <- signSchnorrIO ctx key m
-let ok = verifySchnorr ctx pub sig m
-    xonly = exportXOnlyPubKey ctx pub -- 32 bytes, as BIP-340 publishes keys
+sig <- signSchnorrIO key m
+let ok = verifySchnorr pub sig m
+    xonly = exportXOnlyPubKey pub -- 32 bytes, as BIP-340 publishes keys
 ```
 
 Schnorr signatures are always 64 bytes, are not malleable, and are what Taproot
@@ -306,10 +307,31 @@ are the only ways to build values. Each type has a `get` field with its bytes.
 
 ### Contexts
 
-Every operation takes a `Ctx`. It is created once, shared freely between
-threads, and destroyed by the garbage collector. The only operation that
-modifies a context is `randomizeContext`, which needs exclusive access; most
-programs never call it.
+There is no context in the API. libsecp256k1 needs a context object for every
+call, which holds its error callbacks and the random blinding values that
+protect secret key operations against side channels. The package keeps a
+single global one:
+
+- **Created on first use.** The first call that needs it creates it, once per
+  process, even when several threads arrive together. That call is slower
+  than the following ones by the time it takes to create the context and
+  read 32 bytes from the operating system's secure random source.
+- **Randomized once.** It is seeded with those bytes before it is used, as
+  libsecp256k1 recommends. Blinding changes how the computation runs, not its
+  results.
+- **Never re-randomized.** After its creation the context is only read, so
+  any number of threads can use it without a lock. Randomizing again writes
+  to it, and doing that while another thread signs is a data race in the C
+  library. So there is no function for it, and the context is in a hidden
+  module where no other code can reach it. The package exposes no way to
+  create another context either.
+- **Never destroyed.** It lives as long as the process.
+
+What was given up: before version 3.0.0 the caller created contexts and
+passed one to every function, which allowed a context per thread or per use
+and re-randomizing during a long run. Neither is possible now. See the
+[changelog](https://github.com/jprupp/secp256k1-haskell/blob/master/CHANGELOG.md)
+for how to migrate.
 
 ### Errors
 
@@ -324,18 +346,18 @@ with an internal constructor, raise an exception.
 ### Lower-S and low-R
 
 ```haskell
-isLowS ctx s -- the form verifySig accepts
-isLowR ctx s -- r below 2^255, so DER is at most 70 bytes
-normalizeSig ctx s -- the lower-S form of any signature
+isLowS s -- the form verifySig accepts
+isLowR s -- r below 2^255, so DER is at most 70 bytes
+normalizeSig s -- the lower-S form of any signature
 ```
 
 ### Key tweaking
 
 ```haskell
 let Just t = tweak tweakBytes
-    Just childKey = tweakAddSecKey ctx parentKey t
-    Just childPub = tweakAddPubKey ctx parentPub t
--- derivePubKey ctx childKey == childPub
+    Just childKey = tweakAddSecKey parentKey t
+    Just childPub = tweakAddPubKey parentPub t
+-- derivePubKey childKey == childPub
 ```
 
 This is the operation behind BIP-32 derivation; the tweak itself comes from an
@@ -347,8 +369,8 @@ operations.
 
 ```haskell
 let Just t = tweak taprootTweakBytes -- tagged hash of key and script tree
-    Just outputKey = tweakAddXOnlyPubKey ctx internalKey t
-    Just outputSecKey = tweakAddXOnlySecKey ctx internalSecKey t
+    Just outputKey = tweakAddXOnlyPubKey internalKey t
+    Just outputSecKey = tweakAddXOnlySecKey internalSecKey t
 ```
 
 Computing the tweak, a BIP-341 tagged hash, is left to the caller.
@@ -358,22 +380,22 @@ Computing the tweak, a BIP-341 tagged hash, is left to the caller.
 ```haskell
 import Crypto.Secp256k1.Recovery
 
-let r = signRecMsg ctx key m
-    (compact, recId) = exportCompactRecSig ctx r
+let r = signRecMsg key m
+    (compact, recId) = exportCompactRecSig r
 -- the 65-byte message signature is a header byte (27 + recId, + 4 if the key
 -- is compressed) followed by the 64 compact bytes
-recover ctx r m -- Just the signer's PubKey
+recover r m -- Just the signer's PubKey
 ```
 
 ### Testing with QuickCheck
 
 `SecKey`, `Msg` and `Tweak` have `Arbitrary` instances, so properties can
-range over them directly. With a context `ctx` created once for the test suite:
+range over them directly:
 
 ```haskell
 prop_roundTrip :: SecKey -> Msg -> Bool
 prop_roundTrip key m =
-  verifySig ctx (derivePubKey ctx key) (signMsg ctx key m) m
+  verifySig (derivePubKey key) (signMsg key m) m
 ```
 
 ## Differences from Bitcoin Core
@@ -391,9 +413,17 @@ prop_roundTrip key m =
 
 | Module                                  | Contents                                                  |
 | --------------------------------------- | --------------------------------------------------------- |
-| `Crypto.Secp256k1`                      | The public API: contexts, keys, ECDSA, Schnorr, tweaks    |
+| `Crypto.Secp256k1`                      | The public API: keys, ECDSA, Schnorr, tweaks              |
 | `Crypto.Secp256k1.Recovery`             | Recoverable signatures and public key recovery            |
-| `Crypto.Secp256k1.Internal.*`           | Raw constructors and foreign imports; no stability promise |
+| `Crypto.Secp256k1.Internal.*`           | Raw constructors and helpers; no stability promise        |
+
+The exposed internal modules are `Base`, `Recovery`, `ForeignTypes` and
+`Util`. The modules that hold the global context (`Context`), create contexts
+(`ContextOps`) or bind the C functions, which all take a context (`BaseOps`,
+`RecoveryOps`), are hidden. Nothing a program can import makes, takes or names
+a context, so the raw foreign imports cannot be called from outside the
+package. The tests reach them by compiling the sources of the library
+themselves.
 
 ## Security notes
 

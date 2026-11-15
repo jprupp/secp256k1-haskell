@@ -5,15 +5,19 @@
 -- bindings are @safe@ calls: signing and verifying take tens of microseconds,
 -- and a @safe@ call lets other Haskell threads run meanwhile. Never call these
 -- directly with unchecked inputs; "Crypto.Secp256k1.Internal.Base" validates
--- lengths and contents first. This module is internal and has no API
--- stability guarantee.
+-- lengths and contents first.
+--
+-- Every function takes a context pointer, and the package passes its global
+-- context. Because of that argument this module is hidden: the package
+-- exposes nothing that makes, takes or names a context. Only the package
+-- itself and its tests can call these bindings.
 module Crypto.Secp256k1.Internal.BaseOps where
 
+import Crypto.Secp256k1.Internal.ContextOps (LCtx)
 import Crypto.Secp256k1.Internal.ForeignTypes
   ( AuxRand32,
     Compact64,
     KeyPair96,
-    LCtx,
     Msg32,
     NonceFun,
     PubKey64,

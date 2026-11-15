@@ -6,7 +6,7 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.Trans
 import Crypto.Secp256k1.Internal.BaseOps
-import Crypto.Secp256k1.Internal.Context
+import Crypto.Secp256k1.Internal.ContextOps
 import Crypto.Secp256k1.Internal.ForeignTypes
 import Crypto.Secp256k1.Internal.Util
 import Data.Base16.Types (assertBase16)
