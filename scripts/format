@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-
-REPO_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )
-
-find "$REPO_DIR/src" "$REPO_DIR/test" -type f -name "*.hs" -print0 | xargs -0 ormolu -i

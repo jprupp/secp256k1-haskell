@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- CI runs through the workflow that the Haskell packages of jprupp share in
+  [jprupp/tools](https://github.com/jprupp/tools), with the check of
+  `stack.yaml` for local paths (`check-stack-paths`) and the cache of the
+  Nix build kept per release of nixpkgs.
+- `scripts/format` is gone: `haskell-format`, from jprupp/tools, formats
+  every Haskell file.
+
 ## [3.0.0] - 2026-11-15
 
 The context is now global and no longer part of the API. This breaks every
